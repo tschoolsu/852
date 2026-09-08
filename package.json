@@ -1,0 +1,27 @@
+{
+  "name": "tschool-student-council-files",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "學生會內部檔案與連結管理器",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.901.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.2",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^10.0.1"
+  }
+}

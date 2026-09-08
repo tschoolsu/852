@@ -1,0 +1,25 @@
+<%- include('partials/head', { title: '帳號審核', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="dashboard-shell admin-shell">
+  <div class="section-heading">
+    <div><span class="section-kicker">ADMIN</span><h1>帳號審核</h1></div>
+    <a class="quiet-link" href="/app">返回檔案庫</a>
+  </div>
+  <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
+  <section class="admin-card">
+    <% if (pendingUsers.length === 0) { %>
+      <div class="empty-state"><span>OK</span><h2>沒有待審核帳號</h2></div>
+    <% } else { %>
+      <% pendingUsers.forEach(pending => { %>
+        <div class="approval-row">
+          <div><strong><%= pending.display_name %></strong><small><%= pending.email %> · <%= formatDate(pending.created_at) %></small></div>
+          <form method="post" action="/admin/users/<%= pending.id %>/approve">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="primary-button" type="submit">核准</button>
+          </form>
+        </div>
+      <% }) %>
+    <% } %>
+  </section>
+</main>
+<%- include('partials/footer') %>

@@ -1,0 +1,19 @@
+<header class="site-header">
+  <div class="nav-shell">
+    <a class="brand" href="<%= user ? '/app' : '/login' %>" aria-label="T-Files 首頁">
+      <span>T</span><i></i><span>Files</span>
+    </a>
+    <% if (user) { %>
+      <div class="account-actions">
+        <% if (user.role === 'admin') { %><a class="quiet-link" href="/admin/users">帳號審核</a><% } %>
+        <span class="identity"><%= user.displayName %></span>
+        <form method="post" action="/logout">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="text-button" type="submit">登出</button>
+        </form>
+      </div>
+    <% } else { %>
+      <span class="header-label">學生會內部服務</span>
+    <% } %>
+  </div>
+</header>

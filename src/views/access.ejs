@@ -1,0 +1,33 @@
+<%- include('partials/head', { title: '調整權限', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="single-card-shell top-aligned">
+  <section class="auth-panel access-panel">
+    <p class="eyebrow">ACCESS</p>
+    <h1>調整存取權限</h1>
+    <p class="resource-context"><strong><%= resource.title %></strong><br>只有你可以變更這個項目的存取範圍。</p>
+    <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
+    <form method="post" action="/resources/<%= resource.id %>/access" class="stack-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <fieldset class="permission-options">
+        <legend class="sr-only">存取範圍</legend>
+        <label><input type="radio" name="accessLevel" value="private" <%= resource.access_level === 'private' ? 'checked' : '' %> data-access-radio><span><strong>僅自己</strong><small>只有你能看見與下載</small></span></label>
+        <label><input type="radio" name="accessLevel" value="selected" <%= resource.access_level === 'selected' ? 'checked' : '' %> data-access-radio><span><strong>指定成員</strong><small>由你選擇可存取的人</small></span></label>
+        <label><input type="radio" name="accessLevel" value="members" <%= resource.access_level === 'members' ? 'checked' : '' %> data-access-radio><span><strong>所有已登入成員</strong><small>任何已啟用帳號皆可存取</small></span></label>
+      </fieldset>
+      <div class="member-picker standalone" data-selected-members <%= resource.access_level === 'selected' ? '' : 'hidden' %>>
+        <% members.forEach(member => { %>
+          <label class="member-option">
+            <input type="checkbox" name="memberIds" value="<%= member.id %>" <%= selectedIds.has(member.id) ? 'checked' : '' %>>
+            <span><strong><%= member.display_name %></strong><small><%= member.email %></small></span>
+          </label>
+        <% }) %>
+        <% if (members.length === 0) { %><p>目前沒有其他已啟用成員。</p><% } %>
+      </div>
+      <div class="form-row split">
+        <a href="/app">取消</a>
+        <button class="primary-button" type="submit">儲存權限</button>
+      </div>
+    </form>
+  </section>
+</main>
+<%- include('partials/footer') %>

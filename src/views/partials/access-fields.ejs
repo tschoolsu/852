@@ -1,0 +1,20 @@
+<fieldset class="access-fieldset">
+  <legend>誰可以存取？</legend>
+  <select name="accessLevel" data-access-select>
+    <option value="private">僅自己</option>
+    <option value="selected">指定成員</option>
+    <option value="members">所有已登入成員</option>
+  </select>
+  <div class="member-picker" data-selected-members hidden>
+    <% if (members.length === 0) { %>
+      <p>目前沒有其他已啟用成員。</p>
+    <% } else { %>
+      <% members.forEach(member => { %>
+        <label class="member-option">
+          <input type="checkbox" name="memberIds" value="<%= member.id %>">
+          <span><strong><%= member.display_name %></strong><small><%= member.email %></small></span>
+        </label>
+      <% }) %>
+    <% } %>
+  </div>
+</fieldset>

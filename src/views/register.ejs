@@ -1,0 +1,32 @@
+<%- include('partials/head', { title: '註冊', bodyClass: 'auth-page' }) %>
+<%- include('partials/nav') %>
+<main class="auth-shell compact">
+  <section class="auth-intro">
+    <span class="status-chip">建立識別</span>
+    <h1>加入學生會的<br>共同工作空間。</h1>
+    <p>目前註冊後即可開始使用。</p>
+  </section>
+  <section class="auth-panel" aria-labelledby="register-title">
+    <p class="eyebrow">@<%= allowedEmailDomain %></p>
+    <h2 id="register-title">建立帳號</h2>
+    <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
+    <form method="post" action="/register" class="stack-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>顯示名稱
+        <input type="text" name="displayName" value="<%= values.displayName || '' %>" autocomplete="name" maxlength="80" required>
+      </label>
+      <label>學校電子郵件
+        <input type="email" name="email" value="<%= values.email || '' %>" autocomplete="email" placeholder="name@<%= allowedEmailDomain %>" required>
+      </label>
+      <label>密碼 <span class="label-note">至少 15 個字元</span>
+        <input type="password" name="password" autocomplete="new-password" minlength="15" maxlength="128" required>
+      </label>
+      <label>再次輸入密碼
+        <input type="password" name="passwordConfirm" autocomplete="new-password" minlength="15" maxlength="128" required>
+      </label>
+      <button class="primary-button full" type="submit">建立帳號</button>
+    </form>
+    <p class="auth-switch">已經有帳號？<a href="/login">返回登入</a></p>
+  </section>
+</main>
+<%- include('partials/footer') %>

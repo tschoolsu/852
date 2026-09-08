@@ -1,0 +1,111 @@
+<%- include('partials/head', { title: '檔案庫', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="dashboard-shell">
+  <section class="welcome-grid">
+    <div>
+      <span class="status-chip">已解鎖</span>
+      <h1><%= user.displayName %>，歡迎回來！</h1>
+      <p>今天要整理什麼資料呢？</p>
+    </div>
+    <div class="pass-card dashboard-pass" aria-hidden="true">
+      <span class="pass-brand">T<span></span>Files</span>
+      <strong><%= user.displayName %></strong>
+      <small>MEMBER / 2026</small>
+      <b></b>
+    </div>
+  </section>
+
+  <% if (notice) { %><div class="notice success page-notice" role="status"><%= notice %></div><% } %>
+
+  <section class="action-section" aria-labelledby="new-resource-title">
+    <div class="section-heading">
+      <div><span class="section-kicker">NEW</span><h2 id="new-resource-title">新增內容</h2></div>
+      <span class="section-note">檔案不公開，只有你授權的人可以開啟</span>
+    </div>
+    <div class="action-grid">
+      <details class="action-card mint" <%= activePanel === 'file' ? 'open' : '' %>>
+        <summary><span class="action-code">01</span><strong>上傳檔案</strong><small>任何檔案格式</small></summary>
+        <form method="post" action="/resources/files" enctype="multipart/form-data" class="resource-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <label class="file-drop">選擇檔案
+            <input type="file" name="file" required>
+            <span data-file-name>尚未選擇檔案</span>
+          </label>
+          <label>顯示名稱 <span class="label-note">未填時使用原始檔名</span>
+            <input type="text" name="title" maxlength="160">
+          </label>
+          <label>說明 <span class="label-note">選填</span>
+            <textarea name="description" maxlength="500" rows="2"></textarea>
+          </label>
+          <%- include('partials/access-fields', { members }) %>
+          <button class="primary-button" type="submit">上傳到檔案庫</button>
+        </form>
+      </details>
+
+      <details class="action-card peach" <%= activePanel === 'link' ? 'open' : '' %>>
+        <summary><span class="action-code">02</span><strong>發表連結</strong><small>網站與雲端資源</small></summary>
+        <form method="post" action="/resources/links" class="resource-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <label>連結名稱
+            <input type="text" name="title" maxlength="160" required>
+          </label>
+          <label>網址
+            <input type="url" name="url" placeholder="https://" required>
+          </label>
+          <label>說明 <span class="label-note">選填</span>
+            <textarea name="description" maxlength="500" rows="2"></textarea>
+          </label>
+          <%- include('partials/access-fields', { members }) %>
+          <button class="primary-button" type="submit">加入檔案庫</button>
+        </form>
+      </details>
+    </div>
+  </section>
+
+  <section class="library-section" aria-labelledby="library-title">
+    <div class="section-heading library-heading">
+      <div><span class="section-kicker">LIBRARY</span><h2 id="library-title">檔案庫</h2></div>
+      <form method="get" action="/app" class="search-form" role="search">
+        <label class="sr-only" for="resource-search">搜尋檔案或連結</label>
+        <input id="resource-search" type="search" name="q" value="<%= search %>" placeholder="搜尋檔案或連結">
+        <button type="submit">搜尋</button>
+      </form>
+    </div>
+
+    <% if (resources.length === 0) { %>
+      <div class="empty-state">
+        <span>00</span>
+        <h3><%= search ? '沒有符合的項目' : '檔案庫目前是空的' %></h3>
+        <p><%= search ? '換一個關鍵字再試一次。' : '從上方上傳第一份檔案，或發表一個連結。' %></p>
+      </div>
+    <% } else { %>
+      <div class="resource-list">
+        <% resources.forEach((resource, index) => { %>
+          <article class="resource-row">
+            <span class="resource-number"><%= String(index + 1).padStart(2, '0') %></span>
+            <div class="resource-kind <%= resource.kind %>"><%= resource.kind === 'file' ? 'FILE' : 'LINK' %></div>
+            <div class="resource-main">
+              <h3><%= resource.title %></h3>
+              <% if (resource.description) { %><p><%= resource.description %></p><% } %>
+              <div class="resource-meta">
+                <span><%= resource.owner_name %></span>
+                <span><%= formatDate(resource.created_at) %></span>
+                <% if (resource.kind === 'file') { %><span><%= formatBytes(resource.size_bytes) %></span><% } %>
+                <span><%= resource.access_level === 'private' ? '僅自己' : resource.access_level === 'selected' ? '指定成員' : '所有成員' %></span>
+              </div>
+            </div>
+            <div class="resource-actions">
+              <% if (resource.kind === 'file') { %>
+                <a class="outline-button" href="/resources/<%= resource.id %>/download">下載</a>
+              <% } else { %>
+                <a class="outline-button" href="<%= resource.url %>" target="_blank" rel="noopener noreferrer">開啟</a>
+              <% } %>
+              <% if (resource.owner_id === user.id) { %><a class="quiet-link" href="/resources/<%= resource.id %>/access">權限</a><% } %>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    <% } %>
+  </section>
+</main>
+<%- include('partials/footer') %>
