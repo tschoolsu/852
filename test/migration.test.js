@@ -28,8 +28,10 @@ test("升級保留既有檔案、Email 分享、公開成員設定且可重複�
     assert.equal(db.prepare("SELECT access_level FROM resources WHERE id='link'").get().access_level,"members");
     assert.equal(db.prepare("PRAGMA foreign_keys").get().foreign_keys,1);
     assert.equal(db.prepare("PRAGMA foreign_key_check").all().length,0);
-    assert.deepEqual(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map(row=>row.version),[1,2]);
+    assert.deepEqual(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map(row=>row.version),[1,2,3]);
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='verified_registrations'").get());
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM resource_versions").get().n,2);
+    assert.ok(db.prepare("SELECT name FROM pragma_table_info('resources') WHERE name='trashed_at'").get());
     assert.equal((await fs.readdir(dir)).filter(x=>x.startsWith("before-sharing-v1-")).length,1);
   } finally {
     db.close();

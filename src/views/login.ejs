@@ -3,28 +3,20 @@
 <main class="auth-shell">
   <section class="auth-intro login-intro">
     <h1>學生會檔案管理系統</h1>
-    <p>使用你的學校帳號登入。</p>
+    <p>使用學校 Google 帳號登入。</p>
   </section>
   <section class="auth-panel" aria-labelledby="login-title">
     <p class="eyebrow">歡迎回來</p>
     <h2 id="login-title">登入</h2>
     <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
     <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
-    <form method="post" action="/login" class="stack-form">
-      <input type="hidden" name="next" value="<%= nextPath %>">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>學校電子郵件
-        <input type="email" name="email" value="<%= values.email || '' %>" autocomplete="email" placeholder="name@<%= allowedEmailDomain %>" required autofocus>
-      </label>
-      <label>密碼
-        <input type="password" name="password" autocomplete="current-password" required>
-      </label>
-      <div class="form-row split">
-        <a href="/forgot-password">忘記密碼？</a>
-        <button class="primary-button" type="submit">登入</button>
-      </div>
-    </form>
-    <p class="auth-switch">還沒有帳號？<a href="/register">使用學校帳號註冊</a></p>
+    <p class="subtle">第一次登入會自動建立帳號，並從 Google 同步學校信箱與本名。系統不會取得或保存你的 Google 密碼。</p>
+    <% if (googleReady) { %>
+      <a class="primary-button full google-signin" href="/auth/google?next=<%= encodeURIComponent(nextPath) %>">使用學校 Google 帳號登入</a>
+    <% } else { %>
+      <button class="primary-button full" type="button" disabled>Google 登入尚未設定</button>
+    <% } %>
+    <p class="auth-switch">僅接受 @<%= allowedEmailDomain %> 的學校帳號</p>
   </section>
 </main>
 <%- include('partials/footer') %>

@@ -2,16 +2,13 @@
 
 本專案以 OWASP ASVS 5.0 與 OWASP Cheat Sheet Series 作為基準。這份文件描述目前已實作的控制、營運要求與仍需在正式上線前完成的工作；它不是第三方資安認證。
 
-## 帳號與密碼
+## 帳號與 Google 登入
 
 - 僅接受完整網域為 `tschool.tp.edu.tw` 的電子郵件，不接受相似或子網域字串混淆。
-- 註冊透過 Google OpenID Connect 驗證帳號簽章、audience、nonce、已驗證信箱及 Google Workspace `hd` 網域；顯示名稱直接取自 Google `name` 宣告。
+- 每次登入都透過 Google OpenID Connect 驗證帳號簽章、audience、nonce、已驗證信箱及 Google Workspace `hd` 網域；顯示名稱直接同步 Google `name` 宣告。
 - OAuth 授權碼流程使用 PKCE、一次性隨機 `state` 與 HttpOnly SameSite Cookie 防止授權碼攔截及登入 CSRF。驗證完成後不保存 Google access token 或 refresh token。
-- 密碼長度依專案要求為 8–128 個字元，註冊與重設密碼使用相同規則，允許 Unicode、空格及所有符號，不要求固定組合。此長度設定是專案例外，並未符合 OWASP 對未啟用 MFA 時至少 15 字元的建議。
-- 密碼使用 Node.js `scrypt` 搭配每筆獨立隨機鹽值儲存，不保存明文。
-- 登入與忘記密碼端點有速率限制；登入不存在的帳號時仍執行密碼雜湊驗證，以降低帳號枚舉風險。
-- 忘記密碼頁對存在與不存在的帳號顯示相同訊息。重設權杖以密碼學安全亂數產生、資料庫只保存雜湊值、30 分鐘到期且只能使用一次。
-- 密碼重設完成後，所有既有登入工作階段都會失效，使用者必須重新登入。
+- 系統不會接觸、複製或保存 Google 密碼；Google 帳號的密碼、MFA 與復原流程由學校 Google Workspace 管理。
+- 登入端點有速率限制，第一次成功登入才會自動建立站內帳號。
 
 參考：[OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)。
 
@@ -42,8 +39,8 @@
 
 - SQL 查詢一律使用參數化敘述。
 - EJS 預設 HTML 編碼用於所有使用者輸入；連結只接受 `http` 與 `https`。
-- 稽核紀錄包含登入成功／失敗、登出、註冊、密碼重設、上傳、下載、建立連結、權限修改及帳號核准。
-- 稽核紀錄不保存密碼、工作階段權杖、重設權杖或 SMTP 憑證。
+- 稽核紀錄包含 Google 登入成功／失敗、登出、上傳、下載、建立連結、版本還原、移動、刪除、權限修改及帳號核准。
+- 稽核紀錄不保存 Google 權杖、工作階段權杖或 SMTP 憑證。
 - `.env`、資料庫與上傳檔案不得提交到 Git。
 
 ## 正式上線前必做
@@ -54,9 +51,9 @@
 4. 對 SQLite 資料庫、稽核紀錄及檔案中繼資料建立加密備份與還原演練。
 5. 接入防毒或沙箱掃描服務；掃描完成前將新上傳檔案標記為不可下載。任意格式上傳在沒有惡意程式掃描時仍有剩餘風險。
 6. 在 Google Cloud 完成 OAuth 品牌、用戶端與正式 HTTPS 重新導向 URI 設定；用戶端密鑰只放在部署環境的秘密設定。
-7. 為管理員帳號加入 MFA。高權限帳號只靠密碼仍有憑證遭竊風險。
+7. 由學校 Google Workspace 為管理員帳號強制 MFA，並定期檢查管理員名單。
 8. 設定監控、磁碟及雲端費用告警，定期檢查稽核紀錄和相依套件漏洞。
-9. 進行獨立滲透測試，特別驗證 IDOR、權限變更、上傳繞過、CSRF、工作階段固定與密碼重設流程。
+9. 進行獨立滲透測試，特別驗證 IDOR、權限變更、上傳繞過、CSRF、工作階段固定與 OAuth 登入流程。
 
 ## 漏洞回報與應變
 

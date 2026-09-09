@@ -7,6 +7,7 @@
       <div class="account-actions">
         <a class="nav-library" href="/app">檔案庫</a>
         <a class="nav-library" href="/uploads">我的上傳紀錄</a>
+        <a class="nav-library" href="/trash">垃圾桶</a>
         <% if (user.role === 'admin') { %><a class="quiet-link" href="/admin/users">帳號審核</a><% } %>
         <span class="identity"><%= user.displayName %></span>
         <form method="post" action="/logout">

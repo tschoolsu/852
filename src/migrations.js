@@ -91,4 +91,49 @@ export function migrateResources(db, dataDir) {
       throw error;
     }
   }
+
+  if (!db.prepare("SELECT 1 FROM schema_migrations WHERE version = 3").get()) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE resources ADD COLUMN trashed_at TEXT;
+        ALTER TABLE oauth_registration_states ADD COLUMN next_path TEXT NOT NULL DEFAULT '/app';
+        CREATE TABLE resource_versions (
+          id TEXT PRIMARY KEY,
+          resource_id TEXT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+          revision INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          url TEXT,
+          storage_key TEXT,
+          original_name TEXT,
+          mime_type TEXT,
+          size_bytes INTEGER,
+          parent_id TEXT,
+          event TEXT NOT NULL CHECK (event IN ('created','edited','moved','restored')),
+          created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(resource_id, revision)
+        );
+        INSERT INTO resource_versions (
+          id,resource_id,revision,title,description,url,storage_key,original_name,mime_type,
+          size_bytes,parent_id,event,created_by,created_at
+        )
+        SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+          substr(lower(hex(randomblob(2))),2) || '-' ||
+          substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' ||
+          lower(hex(randomblob(6))),
+          id,revision,title,description,url,storage_key,original_name,mime_type,size_bytes,
+          parent_id,'created',owner_id,created_at
+        FROM resources;
+        CREATE INDEX idx_resources_trashed_owner ON resources(owner_id,trashed_at,updated_at DESC);
+        CREATE INDEX idx_resource_versions_resource ON resource_versions(resource_id,revision DESC);
+      `);
+      db.prepare("INSERT INTO schema_migrations VALUES (3,?)").run(new Date().toISOString());
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

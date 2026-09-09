@@ -24,6 +24,12 @@ document.querySelectorAll('input[type="file"]').forEach((input) => {
   });
 });
 
+document.querySelectorAll("form[data-confirm]").forEach(form => {
+  form.addEventListener("submit",event => {
+    if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+  });
+});
+
 document.querySelector("[data-copy-share]")?.addEventListener("click", async () => {
   const field = document.querySelector("[data-share-url]");
   const status = document.querySelector("[data-copy-status]");
@@ -69,7 +75,7 @@ if (userSearch && userResults) {
     if (!users.length) {
       const empty = document.createElement("span");
       empty.className = "user-result-empty";
-      empty.textContent = "找不到已註冊且啟用的成員";
+      empty.textContent = "找不到已使用 Google 登入且已啟用的成員";
       userResults.append(empty);
     } else {
       users.forEach(user => {

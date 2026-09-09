@@ -9,13 +9,13 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(),"tfiles-sharing-"));
   Object.assign(process.env,{ NODE_ENV:"test",DATA_DIR:dataDir,SESSION_SECRET:"sharing-test-secret-with-more-than-32-characters",REGISTRATION_MODE:"instant",STORAGE_DRIVER:"local",SMTP_HOST:"",ADMIN_EMAILS:"" });
   const { app } = await import("../src/app.js");
-  const { db,createUser,getUserByEmail } = await import("../src/db.js");
-  const { hashPassword } = await import("../src/lib/security.js");
-  const { getResource } = await import("../src/resources-store.js");
+  const { db,createUser,getUserByEmail,createSession } = await import("../src/db.js");
+  const { hashPassword,signSessionToken,createOpaqueToken } = await import("../src/lib/security.js");
+  const { config } = await import("../src/config.js");
+  const { getResource,listVersions } = await import("../src/resources-store.js");
   const server = app.listen(0,"127.0.0.1");
   await new Promise(resolve => server.once("listening",resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const cookie = (res,name) => res.headers.getSetCookie().find(v => v.startsWith(name+"="))?.split(";")[0] || "";
   async function get(route,who) {
     const res = await fetch(base+route,{ redirect:"manual",headers:{ cookie:who?.cookie || "" } });
     const html = await res.text();
@@ -34,11 +34,10 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
   }
   async function account(local,name) {
     const email = local+"@tschool.tp.edu.tw";
-    createUser({ id:randomUUID(),email,displayName:name,passwordHash:await hashPassword("Eight!42"),role:"member",status:"active",googleSubject:`google-${local}` });
-    let page = await get("/login");
-    let who = { email,cookie:cookie(page.res,"tfiles_csrf"),csrf:page.csrf };
-    const result = await post("/login",who,{ email,password:"Eight!42" });
-    who.cookie = cookie(result.res,"tfiles_session");
+    const user = createUser({ id:randomUUID(),email,displayName:name,passwordHash:await hashPassword(createOpaqueToken()),role:"member",status:"active",googleSubject:`google-${local}` });
+    const rawToken = createOpaqueToken();
+    createSession({ tokenHash:signSessionToken(rawToken,config.sessionSecret),userId:user.id,csrfToken:createOpaqueToken(24),expiresAt:new Date(Date.now()+60_000).toISOString() });
+    let who = { email,cookie:`tfiles_session=${rawToken}` };
     who.csrf = (await get("/app",who)).csrf;
     who.id = getUserByEmail(email).id;
     return who;
@@ -103,7 +102,7 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
       assert.match(page,/丙更新的檔案/);assert.match(page,/新說明/);assert.match(page,/新版檔案.txt/);
       assert.equal((await get(`/resources/${file}/download`,viewer)).html,"updated bytes");
       assert.equal(getResource(file).owner_id,owner.id);
-      assert.equal((await fs.readdir(path.join(dataDir,"objects"))).length,1);
+      assert.equal((await fs.readdir(path.join(dataDir,"objects"))).length,2);
     });
     await t.test("過期編輯表單返回 409，避免覆蓋另一人的修改",async () => {
       const stale = getResource(file).revision;
@@ -112,6 +111,15 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
       assert.equal(getResource(file).description,"甲的新版本");
       assert.equal((await get(`/resources/${file}/download`,owner)).html,"updated bytes");
       assert.equal((await fs.readdir(path.join(dataDir,"tmp"))).length,0);
+    });
+    await t.test("保留完整檔案版本並可還原舊檔內容",async () => {
+      const versions = listVersions(file);
+      assert.ok(versions.length >= 3);
+      assert.match((await get(`/resources/${file}/versions`,owner)).html,/版本紀錄/);
+      assert.equal((await get(`/resources/${file}/versions/1/download`,owner)).html,"original bytes");
+      await post(`/resources/${file}/versions/1/restore`,owner,{});
+      assert.equal((await get(`/resources/${file}/download`,owner)).html,"original bytes");
+      assert.equal(listVersions(file)[0].event,"restored");
     });
     link = itemId(await post("/resources/links",owner,{title:"活動網站",url:"https://example.org/"}));
     await grant(link,editor.email,"editor");
@@ -130,7 +138,7 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
       assert.equal(anon.res.status,302);
       assert.equal(anon.res.headers.get("location"),`/login?next=${encodeURIComponent(`/s/${token}`)}`);
       const loginHtml = (await get(anon.res.headers.get("location"))).html;
-      assert.ok(loginHtml.includes(`/s/${token}`));
+      assert.ok(loginHtml.includes(encodeURIComponent(`/s/${token}`)));
       assert.equal((await get(`/resources/${link}`,other)).res.status,404);
       assert.ok(!(await get("/app",owner)).html.includes(token));
       assert.equal((await get(`/s/${"x".repeat(43)}`,other)).res.status,404);
@@ -156,6 +164,31 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
     child = itemId(await post("/resources/files",owner,{title:"子資料夾內的檔案",parentId:subfolder,file:new Blob(["nested bytes"])},true));
     await grant(folder,viewer.email);
     await grant(folder,editor.email,"editor");
+    await t.test("擁有者可以在資料夾與檔案庫最上層之間移動項目",async () => {
+      await post(`/resources/${link}/move`,owner,{parentId:folder});
+      assert.equal(getResource(link).parent_id,folder);
+      assert.match((await get(`/app?folder=${folder}`,owner)).html,/&lt;script&gt;alert/);
+      await post(`/resources/${link}/move`,owner,{parentId:""});
+      assert.equal(getResource(link).parent_id,null);
+      assert.equal(listVersions(link)[0].event,"moved");
+      await post(`/resources/${folder}/move`,owner,{parentId:subfolder},false,400);
+      await post(`/resources/${link}/move`,editor,{parentId:folder},false,404);
+    });
+    await t.test("刪除會進垃圾桶，其他成員立即失去存取，擁有者可還原",async () => {
+      await post(`/resources/${link}/trash`,owner,{});
+      assert.equal((await get(`/resources/${link}`,editor)).res.status,404);
+      assert.match((await get("/trash",owner)).html,/&lt;script&gt;alert/);
+      await post(`/resources/${link}/restore`,owner,{});
+      assert.equal((await get(`/resources/${link}`,editor)).res.status,200);
+    });
+    await t.test("垃圾桶中的檔案可以永久刪除，包含所有保留版本",async () => {
+      const disposable = itemId(await post("/resources/files",owner,{title:"可永久刪除",file:new Blob(["delete me"])},true));
+      const before = (await fs.readdir(path.join(dataDir,"objects"))).length;
+      await post(`/resources/${disposable}/trash`,owner,{});
+      await post(`/resources/${disposable}/delete-permanently`,owner,{});
+      assert.equal(getResource(disposable),undefined);
+      assert.equal((await fs.readdir(path.join(dataDir,"objects"))).length,before-1);
+    });
     await t.test("資料夾權限遞迴套用，檢視者能瀏覽麵包屑但不能新增",async () => {
       const page = (await get(`/app?folder=${subfolder}`,viewer)).html;
       assert.match(page,/共享活動資料夾/);assert.match(page,/子資料夾內的檔案/);
@@ -228,6 +261,15 @@ test("多使用者的共享、資料夾、編輯及畫面情境", async t => {
       await post(`/resources/${file}/access`,owner,{action:"private"});
       assert.equal((await get(`/resources/${file}`,viewer)).res.status,404);
       assert.equal((await get(`/resources/${file}`,owner)).res.status,200);
+    });
+    await t.test("共享資料夾進垃圾桶時不會連帶隱藏其他人擁有的內容",async () => {
+      db.prepare("UPDATE users SET status='active' WHERE id=?").run(editor.id);
+      await post(`/resources/${folder}/trash`,owner,{});
+      assert.equal((await get(`/app?folder=${folder}`,owner)).res.status,404);
+      assert.equal((await get(`/resources/${contribution}`,editor)).res.status,200);
+      assert.equal(getResource(contribution).parent_id !== null,true);
+      await post(`/resources/${folder}/restore`,owner,{});
+      assert.equal((await get(`/app?folder=${folder}`,owner)).res.status,200);
     });
   } finally {
     await new Promise(resolve => server.close(resolve));

@@ -20,8 +20,15 @@
       <% if (resource.kind === 'file') { %><a class="primary-button" href="/resources/<%= resource.id %>/download">下載檔案</a>
       <% } else { %><a class="primary-button" href="<%= resource.url %>" target="_blank" rel="noopener noreferrer">開啟連結 ↗</a><% } %>
       <% if (['owner','editor'].includes(resource.permission)) { %><a class="outline-button" href="/resources/<%= resource.id %>/edit">編輯</a><% } %>
+      <% if (['owner','editor'].includes(resource.permission)) { %><a class="outline-button" href="/resources/<%= resource.id %>/versions">版本紀錄</a><% } %>
       <% if (resource.permission === 'owner') { %><a class="outline-button" href="/resources/<%= resource.id %>/access">共享</a><% } %>
     </div>
+    <% if (resource.permission === 'owner') { %>
+      <form method="post" action="/resources/<%= resource.id %>/trash" class="danger-zone">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="danger-button" type="submit">移到垃圾桶</button>
+      </form>
+    <% } %>
     <% if (parent) { %><a class="back-link" href="/app?folder=<%= parent.id %>">返回「<%= parent.title %>」</a>
     <% } else { %><a class="back-link" href="/app">返回檔案庫</a><% } %>
   </section>

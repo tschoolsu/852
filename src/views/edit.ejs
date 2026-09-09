@@ -16,6 +16,24 @@
       <% } %>
       <div class="form-row split"><a href="/resources/<%= resource.id %>">取消</a><button class="primary-button" type="submit">儲存修改</button></div>
     </form>
+    <% if (resource.owner_id === user.id) { %>
+      <section class="sharing-section">
+        <h2>移動項目</h2>
+        <form method="post" action="/resources/<%= resource.id %>/move" class="stack-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <label>目的地
+            <select name="parentId">
+              <option value="">檔案庫最上層</option>
+              <% moveTargets.forEach(folder => { %>
+                <option value="<%= folder.id %>" <%= resource.parent_id === folder.id ? 'selected' : '' %>><%= folder.title %></option>
+              <% }) %>
+            </select>
+          </label>
+          <button class="outline-button" type="submit">移動</button>
+        </form>
+      </section>
+    <% } %>
+    <a class="back-link" href="/resources/<%= resource.id %>/versions">查看版本紀錄</a>
   </section>
 </main>
 <%- include('partials/footer') %>

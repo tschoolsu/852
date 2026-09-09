@@ -1,0 +1,31 @@
+<%- include('partials/head', { title: '版本紀錄', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="single-card-shell top-aligned">
+  <section class="auth-panel access-panel version-panel">
+    <p class="eyebrow">VERSION HISTORY</p>
+    <h1>「<%= resource.title %>」的版本紀錄</h1>
+    <p class="subtle">還原舊版本時會建立一個新版本，現有紀錄不會被覆蓋。</p>
+    <div class="version-list">
+      <% versions.forEach(version => { %>
+        <article class="version-row">
+          <div>
+            <strong>第 <%= version.revision %> 版<%= version.revision === resource.revision ? '（目前版本）' : '' %></strong>
+            <small><%= formatDate(version.created_at) %> · <%= version.actor_name || '系統' %> · <%= ({created:'建立',edited:'修改',moved:'移動',restored:'還原'})[version.event] %></small>
+            <span><%= version.title %><% if (version.original_name) { %> · <%= version.original_name %><% } %></span>
+          </div>
+          <div class="resource-actions">
+            <% if (resource.kind === 'file' && version.storage_key) { %><a class="quiet-link" href="/resources/<%= resource.id %>/versions/<%= version.revision %>/download">下載</a><% } %>
+            <% if (version.revision !== resource.revision) { %>
+              <form method="post" action="/resources/<%= resource.id %>/versions/<%= version.revision %>/restore">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="outline-button" type="submit">還原此版本</button>
+              </form>
+            <% } %>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+    <a class="back-link" href="/resources/<%= resource.id %>">返回項目</a>
+  </section>
+</main>
+<%- include('partials/footer') %>

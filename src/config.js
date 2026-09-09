@@ -14,7 +14,7 @@ export const config = {
   isProduction,
   host: process.env.HOST || "127.0.0.1",
   port: Number(process.env.PORT || 3000),
-  appUrl: (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, ""),
+  appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000").replace(/\/$/, ""),
   sessionSecret: configuredSecret || randomBytes(32).toString("hex"),
   trustProxy: process.env.TRUST_PROXY === "1",
   registrationMode: process.env.REGISTRATION_MODE === "approval" ? "approval" : "instant",

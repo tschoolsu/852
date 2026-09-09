@@ -15,6 +15,11 @@
       <div class="resource-actions">
         <% if (folder.permission === 'owner') { %><a class="outline-button" href="/resources/<%= folder.id %>/access">共享資料夾</a><% } %>
         <% if (canCreate) { %><a class="quiet-link" href="/resources/<%= folder.id %>/edit">編輯資料夾</a><% } %>
+        <% if (folder.permission === 'owner') { %>
+          <form method="post" action="/resources/<%= folder.id %>/trash">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="danger-button" type="submit">移到垃圾桶</button>
+          </form>
+        <% } %>
         <span class="permission-badge"><%= folder.roleLabel %></span>
       </div>
     <% } %>

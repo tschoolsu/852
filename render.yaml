@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: t-files
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    numInstances: 1
+    disk:
+      name: t-files-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: 1
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
+      - key: ALLOWED_EMAIL_DOMAIN
+        value: tschool.tp.edu.tw
+      - key: REGISTRATION_MODE
+        value: instant
+      - key: ADMIN_EMAILS
+        value: 11430106@tschool.tp.edu.tw
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

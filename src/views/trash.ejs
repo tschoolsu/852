@@ -1,0 +1,32 @@
+<%- include('partials/head', { title: '垃圾桶', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="dashboard-shell drive-shell">
+  <div class="library-title-row">
+    <div><p class="eyebrow">TRASH</p><h1>垃圾桶</h1><p class="subtle">項目會保留在這裡，只有擁有者可以還原。</p></div>
+  </div>
+  <section class="library-section drive-library" aria-label="垃圾桶內容">
+    <div class="section-heading library-heading"><h2>已刪除的項目 <span class="subtle">(<%= resources.length %>)</span></h2></div>
+    <% if (!resources.length) { %>
+      <div class="empty-state"><span>00</span><h2>垃圾桶是空的</h2><p>移到垃圾桶的檔案、連結與資料夾會出現在這裡。</p></div>
+    <% } else { %>
+      <div class="resource-list">
+        <% resources.forEach((resource,index) => { %>
+          <article class="resource-row">
+            <span class="resource-number"><%= String(index+1).padStart(2,'0') %></span>
+            <div class="resource-kind <%= resource.badgeTone %>"><%= resource.badge %></div>
+            <div class="resource-main"><h3><%= resource.title %></h3><div class="resource-meta"><span>刪除於 <%= formatDate(resource.trashed_at) %></span></div></div>
+            <form method="post" action="/resources/<%= resource.id %>/restore" class="resource-actions">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="outline-button" type="submit">還原</button>
+            </form>
+            <form method="post" action="/resources/<%= resource.id %>/delete-permanently" class="resource-actions" data-confirm="永久刪除後無法還原，確定要繼續嗎？">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="danger-button" type="submit">永久刪除</button>
+            </form>
+          </article>
+        <% }) %>
+      </div>
+    <% } %>
+  </section>
+</main>
+<%- include('partials/footer') %>

@@ -2,14 +2,18 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import multer from "multer";
+import { rateLimit } from "express-rate-limit";
 import { pipeline } from "node:stream/promises";
 import { audit, getActiveUserByEmailOrName, searchActiveUsers } from "./db.js";
 import { config } from "./config.js";
 import { normalizeEmail, isAllowedSchoolEmail } from "./lib/security.js";
 import { getObjectStream, removeTempFile, storeUploadedFile, removeObject, tempDir } from "./storage.js";
+import { sendShareNotificationEmail } from "./mail.js";
 import {
   accessContext, getResource, grantsFor, permissionFor, canEdit, createItem, saveItem,
-  setEmailGrant, removeEmailGrant, setLink, followLink, makePrivate, roleLabel,
+  setEmailGrant, removeEmailGrant, setLink, followLink, makePrivate, roleLabel, listVersions,
+  getVersion, restoreVersion, moveItem, trashItem, restoreTrashedItem, listTrashedOwned,
+  permanentlyDeleteItem,
 } from "./resources-store.js";
 
 const clean = (value,max) => typeof value === "string" ? value.trim().slice(0,max) : "";
@@ -44,6 +48,8 @@ function badgeFor(row) {
 export function resourceRouter({ requireAuth,requireCsrf }) {
   const router = Router();
   const upload = multer({ dest: tempDir, limits: { fileSize: config.maxUploadBytes, files: 1, fields: 12, fieldSize: 8192, parts: 15 } });
+  const uploadLimiter = rateLimit({ windowMs:15*60*1000,limit:120,standardHeaders:"draft-8",legacyHeaders:false,
+    keyGenerator:req => req.user.id,message:"短時間內上傳或替換檔案的次數過多，請稍後再試。" });
   router.use(requireAuth);
   router.use((_req,res,next) => { res.setHeader("Cache-Control","no-store"); next(); });
 
@@ -53,7 +59,7 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
   }
   function owned(req) {
     const item = getResource(req.params.id);
-    if (!item || item.owner_id !== req.user.id) throw fail(404,"找不到項目，或你沒有管理分享的權限。");
+    if (!item || item.trashed_at || item.owner_id !== req.user.id) throw fail(404,"找不到項目，或你沒有管理分享的權限。");
     return item;
   }
   function requireEditor(req,_res,next) {
@@ -95,6 +101,10 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
   }
   router.get("/app",library);
   router.get("/uploads",library);
+  router.get("/trash",(req,res) => {
+    const resources = listTrashedOwned(req.user.id).map(row => ({ ...row,...badgeFor(row) }));
+    res.render("trash",{ resources });
+  });
 
   router.post("/resources/folders",requireCsrf,(req,res) => {
     const title = clean(req.body.title,160);
@@ -105,7 +115,7 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
     audit(req.user.id,"resource.folder_created","resource",item.id,{ parentId });
     res.redirect(`/app?folder=${item.id}&notice=created`);
   });
-  router.post("/resources/files",upload.single("file"),requireCsrf,async (req,res) => {
+  router.post("/resources/files",uploadLimiter,upload.single("file"),requireCsrf,async (req,res) => {
     let key;
     try {
       if (!req.file) throw fail(400,"請選擇一個檔案後再上傳。");
@@ -160,9 +170,13 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
   });
   router.get("/resources/:id/edit",requireEditor,(req,res) => {
     const resource = getResource(req.params.id);
-    res.render("edit",{ resource,error:"" });
+    const context = accessContext(req.user.id);
+    const moveTargets = resource.owner_id === req.user.id ? context.rows
+      .filter(row => row.kind === "folder" && row.id !== resource.id && !context.isTrashed(row.id)
+        && ["owner","editor"].includes(context.permission(row.id))) : [];
+    res.render("edit",{ resource,error:"",moveTargets });
   });
-  router.post("/resources/:id/edit",requireEditor,upload.single("file"),requireCsrf,async (req,res) => {
+  router.post("/resources/:id/edit",requireEditor,uploadLimiter,upload.single("file"),requireCsrf,async (req,res) => {
     let newKey;
     try {
       const resource = getResource(req.params.id);
@@ -178,15 +192,71 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
         Object.assign(values,{ storageKey:newKey,originalName:filename(req.file.originalname),mimeType:"application/octet-stream",sizeBytes:req.file.size });
       }
       if (!canEdit(resource.id,req.user.id)) throw fail(403,"你的編輯權限已被撤回，這次修改未儲存。");
-      if (!saveItem(resource.id,revision,values)) throw fail(409,"此項目已被其他人更新。請重新開啟編輯頁後再儲存。");
+      if (!saveItem(resource.id,revision,values,req.user.id)) throw fail(409,"此項目已被其他人更新。請重新開啟編輯頁後再儲存。");
       newKey = null;
       audit(req.user.id,req.file ? "resource.file_replaced" : "resource.edited","resource",resource.id);
-      if (req.file) await removeObject(resource.storage_key).catch(error => console.error("Old object cleanup failed:",error.message));
       res.redirect(`/resources/${resource.id}?notice=updated`);
     } finally {
       await removeTempFile(req.file?.path);
       if (newKey) await removeObject(newKey);
     }
+  });
+
+  router.post("/resources/:id/move",requireCsrf,(req,res) => {
+    const resource = owned(req);
+    const parentId = clean(req.body.parentId,64) || null;
+    if (parentId) checkParent(parentId,req.user.id);
+    if (!moveItem(resource.id,parentId,req.user.id)) throw fail(400,"無法移動到這個資料夾，請確認目標位置及權限。");
+    audit(req.user.id,"resource.moved","resource",resource.id,{ parentId });
+    res.redirect(`/resources/${resource.id}?notice=updated`);
+  });
+
+  router.post("/resources/:id/trash",requireCsrf,(req,res) => {
+    const resource = owned(req);
+    if (!trashItem(resource.id,req.user.id)) throw fail(409,"項目已被移到垃圾桶或狀態已改變。");
+    audit(req.user.id,"resource.trashed","resource",resource.id,{});
+    res.redirect("/app");
+  });
+
+  router.post("/resources/:id/restore",requireCsrf,(req,res) => {
+    const resource = getResource(req.params.id);
+    if (!resource || resource.owner_id !== req.user.id || !resource.trashed_at) throw fail(404,"垃圾桶中找不到這個項目。");
+    if (!restoreTrashedItem(resource.id,req.user.id)) throw fail(409,"項目狀態已改變，請重新整理。");
+    audit(req.user.id,"resource.restored_from_trash","resource",resource.id,{});
+    res.redirect(`/resources/${resource.id}`);
+  });
+
+  router.post("/resources/:id/delete-permanently",requireCsrf,async (req,res) => {
+    const resource = getResource(req.params.id);
+    if (!resource || resource.owner_id !== req.user.id || !resource.trashed_at) throw fail(404,"垃圾桶中找不到這個項目。");
+    const keys = permanentlyDeleteItem(resource.id,req.user.id);
+    if (!keys) throw fail(409,"資料夾中仍有其他成員擁有的內容，無法永久刪除。");
+    for (const key of keys) await removeObject(key).catch(error => console.error("Deleted object cleanup failed:",error.message));
+    audit(req.user.id,"resource.deleted_permanently","resource",resource.id,{ objectCount:keys.length });
+    res.redirect("/trash");
+  });
+
+  router.get("/resources/:id/versions",requireEditor,(req,res) => {
+    const resource = getResource(req.params.id);
+    res.render("versions",{ resource,versions:listVersions(resource.id) });
+  });
+
+  router.get("/resources/:id/versions/:revision/download",requireEditor,async (req,res) => {
+    const resource = getResource(req.params.id);
+    const version = getVersion(resource.id,Number(req.params.revision));
+    if (!version || resource.kind !== "file" || !version.storage_key) throw fail(404,"找不到這個檔案版本。");
+    res.attachment(version.original_name || "download");
+    res.type("application/octet-stream");
+    audit(req.user.id,"resource.version_download_started","resource",resource.id,{ revision:version.revision });
+    await pipeline(await getObjectStream(version.storage_key),res);
+  });
+
+  router.post("/resources/:id/versions/:revision/restore",requireEditor,requireCsrf,(req,res) => {
+    const resource = getResource(req.params.id);
+    const restored = restoreVersion(resource.id,Number(req.params.revision),req.user.id);
+    if (!restored) throw fail(404,"找不到可還原的版本。");
+    audit(req.user.id,"resource.version_restored","resource",resource.id,{ fromRevision:Number(req.params.revision),toRevision:restored.revision });
+    res.redirect(`/resources/${resource.id}?notice=updated`);
   });
 
   router.get("/resources/:id/access",(req,res) => {
@@ -211,6 +281,18 @@ export function resourceRouter({ requireAuth,requireCsrf }) {
       if (recipient.id === req.user.id) throw fail(400,"你已是擁有者，不需要分享給自己。");
       if (!["viewer","editor"].includes(req.body.role)) throw fail(400,"請選擇可檢視或可編輯。");
       setEmailGrant(resource.id,recipient.id,req.body.role);
+      setImmediate(async () => {
+        try {
+          const result = await sendShareNotificationEmail({
+            to:email,recipientName:recipient.display_name,sharerName:req.user.displayName,
+            resourceTitle:resource.title,roleLabel:roleLabel(req.body.role),resourceUrl:`${config.appUrl}/resources/${resource.id}`,
+          });
+          audit(req.user.id,"resource.share_notification_processed","resource",resource.id,{ delivered:result.delivered });
+        } catch (error) {
+          console.error("Share notification email failed:",error.message);
+          audit(req.user.id,"resource.share_notification_failed","resource",resource.id,{});
+        }
+      });
     } else if (action === "remove") {
       removeEmailGrant(resource.id,clean(req.body.userId,64));
     } else if (action === "link") {

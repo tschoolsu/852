@@ -338,6 +338,15 @@ input:focus, textarea:focus, select:focus { border-color: var(--green); outline:
 .user-result small { color:var(--muted); font-size:.8rem; }
 .user-result-empty { display:block; padding:12px; color:var(--muted); font-size:.85rem; font-weight:500; }
 .nav-library { font-size:.875rem; font-weight:700; text-decoration:none; }
+.google-signin { margin-top:24px; text-align:center; text-decoration:none; }
+.danger-zone { margin-top:28px; padding-top:20px; border-top:1px dashed #d6a7a7; }
+.danger-button { padding:10px 16px; border:1.5px solid #8b2020; border-radius:8px; background:#fff5f5; color:#8b2020; font-weight:750; }
+.danger-button:hover { background:#8b2020; color:white; }
+.version-list { display:grid; gap:12px; margin:26px 0; }
+.version-row { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px; border:1px solid var(--line); border-radius:10px; background:white; }
+.version-row > div:first-child { display:grid; gap:4px; min-width:0; }
+.version-row small { color:var(--muted); }
+.version-row span { overflow-wrap:anywhere; }
 @media(max-width:800px) {
   .library-title-row { flex-direction:column; align-items:flex-start; }
   .account-actions { gap:10px; }
@@ -351,4 +360,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--green); outline:
   .create-fab { right:18px; bottom:18px; width:58px; height:58px; }
   .create-dialog { width:calc(100% - 18px); margin-bottom:9px; }
   .create-dialog-card { max-height:calc(100vh - 18px); }
+  .version-row { align-items:flex-start; flex-direction:column; }
+  .version-row .resource-actions { grid-column:auto; }
 }

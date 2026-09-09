@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 function cookieFrom(response, name) {
   const values = response.headers.getSetCookie();
@@ -17,45 +18,7 @@ async function formPage(baseUrl, route, existingCookie = "") {
   return { response, html, csrf, cookie: cookieFrom(response, "tfiles_csrf") };
 }
 
-async function register(baseUrl, email, displayName, createVerifiedRegistration, hashToken) {
-  const rawToken = `verified-${email.replace(/[^a-z]/g,"")}`;
-  createVerifiedRegistration({ tokenHash:hashToken(rawToken),email,displayName,googleSubject:`google-${email}`,
-    expiresAt:new Date(Date.now()+60_000).toISOString() });
-  const registrationCookie = `tfiles_registration=${rawToken}`;
-  const page = await formPage(baseUrl, "/register/complete",registrationCookie);
-  assert.match(page.html,new RegExp(displayName));
-  assert.match(page.html,new RegExp(email.replaceAll(".","\\.")));
-  assert.doesNotMatch(page.html,/name="displayName"/);
-  const response = await fetch(`${baseUrl}/register/complete`, {
-    method: "POST",
-    redirect: "manual",
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie: `${registrationCookie}; ${page.cookie}` },
-    body: new URLSearchParams({
-      _csrf: page.csrf,
-      password: "Eight!42",
-      passwordConfirm: "Eight!42",
-    }),
-  });
-  assert.equal(response.status, 302);
-}
-
-async function login(baseUrl, email) {
-  const page = await formPage(baseUrl, "/login");
-  const response = await fetch(`${baseUrl}/login`, {
-    method: "POST",
-    redirect: "manual",
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie: page.cookie },
-    body: new URLSearchParams({
-      _csrf: page.csrf,
-      email,
-      password: "Eight!42",
-    }),
-  });
-  assert.equal(response.status, 302);
-  return cookieFrom(response, "tfiles_session");
-}
-
-test("完整註冊、登入、上傳與權限流程由伺服器端強制執行", async () => {
+test("Google 登入、上傳與權限流程由伺服器端強制執行", async () => {
   const testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "tfiles-integration-"));
   process.env.NODE_ENV = "test";
   process.env.DATA_DIR = testDataDir;
@@ -65,8 +28,8 @@ test("完整註冊、登入、上傳與權限流程由伺服器端強制執行",
   process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
   process.env.GOOGLE_CLIENT_SECRET = "test-client-secret";
 
-  const [{ app }, { db,createVerifiedRegistration }, { hashToken }] = await Promise.all([
-    import("../src/app.js"), import("../src/db.js"), import("../src/lib/security.js"),
+  const [{ app }, { db,createUser,createSession }, security, { config }] = await Promise.all([
+    import("../src/app.js"), import("../src/db.js"), import("../src/lib/security.js"), import("../src/config.js"),
   ]);
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
@@ -75,22 +38,31 @@ test("完整註冊、登入、上傳與權限流程由伺服器端強制執行",
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
-    const registerPage = await formPage(baseUrl,"/register");
-    assert.doesNotMatch(registerPage.html,/name="displayName"/);
-    assert.match(registerPage.html,/使用學校 Google 帳號驗證/);
-    const googleStart = await fetch(`${baseUrl}/auth/google/register`,{redirect:"manual"});
+    const loginPage = await formPage(baseUrl,"/login");
+    assert.doesNotMatch(loginPage.html,/type="password"|忘記密碼|註冊/);
+    assert.match(loginPage.html,/使用學校 Google 帳號登入/);
+    assert.equal(loginPage.response.headers.get("cache-control"),"no-store");
+    const googleStart = await fetch(`${baseUrl}/auth/google`,{redirect:"manual"});
     assert.equal(googleStart.status,302);
     const googleUrl = new URL(googleStart.headers.get("location"));
     assert.equal(googleUrl.origin,"https://accounts.google.com");
     assert.equal(googleUrl.searchParams.get("hd"),"tschool.tp.edu.tw");
     assert.equal(googleUrl.searchParams.get("code_challenge_method"),"S256");
     assert.match(googleUrl.searchParams.get("scope"),/openid/);
-    assert.equal(googleUrl.searchParams.get("state"),cookieFrom(googleStart,"tfiles_oauth_state").split("=")[1]);
+    assert.ok(cookieFrom(googleStart,"tfiles_oauth_states").includes(googleUrl.searchParams.get("state")));
 
-    await register(baseUrl, "owner@tschool.tp.edu.tw", "檔案擁有者",createVerifiedRegistration,hashToken);
-    await register(baseUrl, "member@tschool.tp.edu.tw", "其他成員",createVerifiedRegistration,hashToken);
-    const ownerCookie = await login(baseUrl, "owner@tschool.tp.edu.tw");
-    const memberCookie = await login(baseUrl, "member@tschool.tp.edu.tw");
+    const passwordHash = await security.hashPassword("unusable-random-test-password");
+    function account(email,displayName) {
+      const user = createUser({ id:randomUUID(),email,displayName,passwordHash,role:"member",status:"active",googleSubject:`google-${email}` });
+      const rawToken = `test-session-${randomUUID()}`;
+      createSession({ tokenHash:security.signSessionToken(rawToken,config.sessionSecret),userId:user.id,
+        csrfToken:`csrf-${randomUUID()}`,expiresAt:new Date(Date.now()+60_000).toISOString() });
+      return { user,cookie:`tfiles_session=${rawToken}` };
+    }
+    const owner = account("owner@tschool.tp.edu.tw","檔案擁有者");
+    const member = account("member@tschool.tp.edu.tw","其他成員");
+    const ownerCookie = owner.cookie;
+    const memberCookie = member.cookie;
 
     const dashboard = await fetch(`${baseUrl}/app`, { headers: { cookie: ownerCookie } });
     const dashboardHtml = await dashboard.text();

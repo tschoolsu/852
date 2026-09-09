@@ -4,7 +4,7 @@
   <section class="auth-panel access-panel">
     <p class="eyebrow">SHARE</p>
     <h1>共享「<%= resource.title %>」</h1>
-    <p class="subtle">只有已註冊並登入的學校帳號可以存取。編輯者可修改內容，分享設定由擁有者管理。</p>
+    <p class="subtle">只有已使用 Google 登入本系統的學校帳號可以存取。編輯者可修改內容，分享設定由擁有者管理。</p>
     <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
     <% if (resource.parent_id) { %><div class="notice">此項目會繼承上層資料夾權限。移除這裡的個別共享，不會移除從資料夾繼承的權限。</div><% } %>
     <% if (resource.kind === 'folder') { %><p class="subtle">分享此資料夾會同時開放裡面的檔案與子資料夾；編輯者也可以在其中新增內容。</p><% } %>

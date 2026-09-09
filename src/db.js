@@ -89,9 +89,17 @@ export function nowIso() {
 }
 
 export function syncConfiguredAdmins() {
-  const update = db.prepare("UPDATE users SET role = 'admin', updated_at = ? WHERE email = ? COLLATE NOCASE");
   const now = nowIso();
-  for (const email of config.adminEmails) update.run(now, email);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE users SET role = 'member', updated_at = ? WHERE role = 'admin'").run(now);
+    const update = db.prepare("UPDATE users SET role = 'admin', updated_at = ? WHERE email = ? COLLATE NOCASE");
+    for (const email of config.adminEmails) update.run(now, email);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function getUserByEmail(email) {
@@ -139,9 +147,10 @@ export function createUser({ id, email, displayName, passwordHash, role, status,
   return getUserById(id);
 }
 
-export function createOAuthRegistrationState({ stateHash, codeVerifier, nonce, expiresAt }) {
-  db.prepare(`INSERT INTO oauth_registration_states(state_hash,code_verifier,nonce,expires_at,created_at)
-    VALUES (?,?,?,?,?)`).run(stateHash,codeVerifier,nonce,expiresAt,nowIso());
+export function createOAuthRegistrationState({ stateHash, codeVerifier, nonce, expiresAt, nextPath = "/app" }) {
+  pruneExpiredRecords();
+  db.prepare(`INSERT INTO oauth_registration_states(state_hash,code_verifier,nonce,expires_at,created_at,next_path)
+    VALUES (?,?,?,?,?,?)`).run(stateHash,codeVerifier,nonce,expiresAt,nowIso(),nextPath);
 }
 
 export function consumeOAuthRegistrationState(stateHash) {
@@ -183,6 +192,38 @@ export function createUserFromVerifiedRegistration({ tokenHash,id,passwordHash,r
     const now = nowIso();
     db.prepare(`INSERT INTO users(id,email,display_name,password_hash,role,status,created_at,updated_at,google_subject)
       VALUES (?,?,?,?,?,?,?,?,?)`).run(id,verified.email,verified.display_name,passwordHash,role,status,now,now,verified.google_subject);
+    db.exec("COMMIT");
+    return { outcome:"created",user:getUserById(id) };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function signInWithGoogle({ id,email,displayName,googleSubject,passwordHash,status }) {
+  const now = nowIso();
+  const role = config.adminEmails.has(email) ? "admin" : "member";
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const bySubject = db.prepare("SELECT * FROM users WHERE google_subject=?").get(googleSubject);
+    const byEmail = db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
+    if (bySubject && byEmail && bySubject.id !== byEmail.id) {
+      db.exec("ROLLBACK");
+      return { outcome:"conflict",user:null };
+    }
+    const user = bySubject || byEmail;
+    if (user?.google_subject && user.google_subject !== googleSubject) {
+      db.exec("ROLLBACK");
+      return { outcome:"conflict",user:null };
+    }
+    if (user) {
+      db.prepare(`UPDATE users SET email=?,display_name=?,google_subject=?,role=?,updated_at=? WHERE id=?`)
+        .run(email,displayName,googleSubject,role,now,user.id);
+      db.exec("COMMIT");
+      return { outcome:"existing",user:getUserById(user.id) };
+    }
+    db.prepare(`INSERT INTO users(id,email,display_name,password_hash,role,status,created_at,updated_at,google_subject)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(id,email,displayName,passwordHash,role,status,now,now,googleSubject);
     db.exec("COMMIT");
     return { outcome:"created",user:getUserById(id) };
   } catch (error) {
