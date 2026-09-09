@@ -1,0 +1,94 @@
+'use client';
+
+import { useCallback, useEffect, useState, type ReactNode, type SyntheticEvent } from 'react';
+import { ArchiveRestore, ChevronRight, Download, File, FileImage, FileText, Folder, FolderInput, History, Link as LinkIcon, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2, Upload, Users, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+
+type User={id:string;email:string;displayName:string;role:string};
+type Item={id:string;kind:'file'|'link'|'folder';title:string;description:string;url:string|null;original_name:string|null;mime_type:string|null;size_bytes:number|null;owner_id:string;owner_name:string;owner_email:string;parent_id:string|null;access_level:string;permission:string;revision:number;trashed_at:string|null;created_at:string;updated_at:string};
+type Detail={resource:Item;versions:Array<{revision:number;event:string;actor_id:string;original_name:string|null;size_bytes:number|null;created_at:string}>;members:Array<{id:string;email:string;display_name:string;role:string}>;link:{role:string}|null};
+
+async function requestJson<T=Record<string,unknown>>(url:string,options:RequestInit={}):Promise<T> {
+  const headers=new Headers(options.headers); headers.set('Accept','application/json');
+  const response=await fetch(url,{...options,headers}); const data=await response.json().catch(()=>({})) as T & {error?:string};
+  if(!response.ok) throw new Error(data.error || '操作失敗，請稍後再試。'); return data;
+}
+const formatDate=(value:string)=>new Intl.DateTimeFormat('zh-TW',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
+const formatSize=(bytes:number|null)=>bytes==null?'':bytes<1024?`${bytes} B`:bytes<1048576?`${(bytes/1024).toFixed(1)} KB`:`${(bytes/1048576).toFixed(1)} MB`;
+const formatKind=(item:Item)=>item.kind==='folder'?'資料夾':item.kind==='link'?'LINK':(item.original_name?.split('.').pop()||'FILE').toUpperCase();
+const eventLabel=(event:string)=>({created:'建立',updated:'修改',moved:'移動',version_restored:'還原舊版本'}[event]||event);
+
+export default function ClientApp(){
+  const [user,setUser]=useState<User|null>(null),[csrf,setCsrf]=useState(''),[checking,setChecking]=useState(true);
+  const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'>('accessible');
+  const [parent,setParent]=useState(''),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[mobile,setMobile]=useState(false);
+  const [createKind,setCreateKind]=useState<''|'file'|'link'|'folder'>(''),[selected,setSelected]=useState<Item|null>(null),[detail,setDetail]=useState<Detail|null>(null);
+  const [mode,setMode]=useState<''|'edit'|'move'|'share'|'versions'>(''),[folders,setFolders]=useState<Item[]>([]),[confirmDelete,setConfirmDelete]=useState(false),[generatedLink,setGeneratedLink]=useState('');
+  const share=typeof window==='undefined'?'':new URLSearchParams(window.location.search).get('share')||'';
+
+  const load=useCallback(async()=>{if(!user)return;const params=new URLSearchParams({scope,parent,q:query,share});const data=await requestJson<{items:Item[];folder:Item|null}>(`/api/resources?${params}`);setItems(data.items);setFolder(data.folder);},[user,scope,parent,query,share]);
+  useEffect(()=>{requestJson<{user:User;csrf:string}>('/api/me').then(data=>{setUser(data.user);setCsrf(data.csrf)}).catch(()=>setUser(null)).finally(()=>setChecking(false));},[]);
+  // oxlint-disable-next-line react/react-compiler -- Refresh server state whenever the selected folder or scope changes.
+  useEffect(()=>{void load().catch(e=>setMessage(e.message));},[load]);
+  const openDetail=async(item:Item)=>{if(item.kind==='folder'&&!item.trashed_at){setParent(item.id);return;}setSelected(item);setMessage('');try{setDetail(await requestJson<Detail>(`/api/resources/${item.id}?share=${encodeURIComponent(share)}&trash=${item.trashed_at?'1':'0'}`));}catch(e){setMessage((e as Error).message)}};
+  const refresh=async()=>{setSelected(null);setDetail(null);setMode('');setGeneratedLink('');await load();};
+  const mutate=async(operation:string,data:Record<string,unknown>={})=>{if(!selected)return;setBusy(true);setMessage('');try{const result=await requestJson<{warning?:string}>(`/api/resources/${selected.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation,csrf,share,...data})});await refresh();if(result.warning)setMessage(result.warning);}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}};
+
+  if(checking)return <div className="loading-screen"><div className="loading-mark">T</div><p>正在開啟檔案庫…</p></div>;
+  if(!user)return <Login error={typeof window==='undefined'?'':new URLSearchParams(window.location.search).get('error')||''}/>;
+
+  return <div className="app-shell">
+    <header className="topbar"><button className="mobile-menu" onClick={()=>setMobile(v=>!v)} aria-label="開啟選單"><Menu/></button><div className="brand"><span className="brand-mark">T</span><div><strong>學生會檔案管理系統</strong><small>TSchool 學生會數位部</small></div></div>
+      <label className="search-box"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜尋檔案、連結或資料夾"/></label>
+      <div className="account"><span><strong>{user.displayName}</strong><small>{user.email}{user.role==='admin'?' · 管理員':''}</small></span><Button variant="ghost" size="icon" aria-label="登出" onClick={async()=>{await requestJson('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf})});location.href='/';}}><LogOut/></Button></div>
+    </header>
+    <aside className={`sidebar ${mobile?'sidebar-open':''}`}><button className="sidebar-close" onClick={()=>setMobile(false)}><X/></button><p className="nav-label">檔案庫</p>
+      <Nav active={scope==='accessible'} icon={<Folder/>} label="可存取的內容" onClick={()=>{setScope('accessible');setParent('');setMobile(false)}}/>
+      <Nav active={scope==='mine'} icon={<Upload/>} label="我的上傳紀錄" onClick={()=>{setScope('mine');setParent('');setMobile(false)}}/>
+      <Nav active={scope==='trash'} icon={<Trash2/>} label="垃圾桶" onClick={()=>{setScope('trash');setParent('');setMobile(false)}}/>
+      <div className="sidebar-note"><strong>學校帳號限定</strong><p>只有登入過本系統的 @tschool.tp.edu.tw 成員可被指定共享。</p></div>
+    </aside>
+    <main className="content"><div className="page-head"><div><p className="eyebrow">{scope==='mine'?'MY UPLOADS':scope==='trash'?'TRASH':'LIBRARY'}</p><h1>{folder?.title || (scope==='mine'?'我的上傳紀錄':scope==='trash'?'垃圾桶':'可存取的內容')}</h1><p>{scope==='trash'?'只有擁有者可以還原或永久刪除。':'集中管理學生會的檔案、網址與資料夾。'}</p></div>{parent&&<Button variant="outline" onClick={()=>setParent(folder?.parent_id||'')}>回上一層</Button>}</div>
+      {message&&<div className="notice" role="alert">{message}</div>}
+      <div className="file-table"><div className="file-row file-header"><span>類型</span><span>名稱</span><span>擁有者</span><span>更新時間</span><span></span></div>
+        {items.map(item=><button className="file-row" key={item.id} onClick={()=>openDetail(item)}><KindIcon item={item}/><span className="file-name"><strong>{item.title}</strong><small>{item.description || formatKind(item)}{item.size_bytes?` · ${formatSize(item.size_bytes)}`:''}</small></span><span>{item.owner_name||'—'}</span><span>{formatDate(item.updated_at)}</span><MoreHorizontal/></button>)}
+        {!items.length&&<div className="empty"><span>{scope==='trash'?'00':'+'}</span><h2>{query?'找不到符合的內容':scope==='trash'?'垃圾桶是空的':'這裡還沒有內容'}</h2><p>{scope==='trash'?'刪除的檔案、連結與資料夾會出現在這裡。':'使用右下角的加號新增第一個項目。'}</p></div>}
+      </div>
+    </main>
+    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2"><DropdownMenuItem onClick={()=>setCreateKind('file')}><Upload/>上傳檔案</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    <CreateDialog kind={createKind} setKind={setCreateKind} csrf={csrf} parent={parent} onDone={refresh} setMessage={setMessage}/>
+    <DetailDialog detail={detail} selected={selected} setSelected={setSelected} setDetail={setDetail} mode={mode} setMode={setMode} csrf={csrf} busy={busy} mutate={mutate} folders={folders} setFolders={setFolders} generatedLink={generatedLink} setGeneratedLink={setGeneratedLink} setMessage={setMessage} openDelete={()=>setConfirmDelete(true)}/>
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久刪除這個項目？</AlertDialogTitle><AlertDialogDescription>所有版本與檔案內容都會永久刪除，無法還原。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction className="danger-solid" onClick={()=>mutate('delete')}>永久刪除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </div>;
+}
+
+function Login({error}:{error:string}){return <main className="login-page"><section className="login-intro"><div className="brand light"><span className="brand-mark">T</span><strong>學生會內部服務</strong></div><div><h1>學生會檔案<br/>管理系統</h1><p>使用你的學校 Google 帳號登入</p></div><small>T Files © 2026 TSchool 學生會數位部</small></section><section className="login-panel"><div className="login-card"><p className="eyebrow">歡迎回來</p><h2>登入</h2><p>第一次登入會自動建立帳號，並從 Google 同步學校信箱與本名。</p>{error&&<div className="notice">{error}</div>}{/* oxlint-disable-next-line next/no-html-link-for-pages -- OAuth must perform a full-page navigation. */}<a className="google-button" href="/auth/google"><span>G</span>使用學校 Google 帳號登入</a><small>僅接受 @tschool.tp.edu.tw 的學校帳號<br/>系統不會取得或保存你的 Google 密碼</small></div></section></main>}
+
+function Nav({active,icon,label,onClick}:{active:boolean;icon:ReactNode;label:string;onClick:()=>void}){return <button className={`nav-item ${active?'active':''}`} onClick={onClick}>{icon}<span>{label}</span></button>}
+function KindIcon({item}:{item:Item}){const Icon=item.kind==='folder'?Folder:item.kind==='link'?LinkIcon:item.mime_type?.startsWith('image/')?FileImage:item.mime_type==='application/pdf'?FileText:File;return <span className={`kind-icon ${item.kind}`}><Icon/><small>{formatKind(item)}</small></span>}
+
+function CreateDialog({kind,setKind,csrf,parent,onDone,setMessage}:{kind:string;setKind:(v:''|'file'|'link'|'folder')=>void;csrf:string;parent:string;onDone:()=>Promise<void>;setMessage:(v:string)=>void}){
+  const submit=async(e:SyntheticEvent<HTMLFormElement>)=>{e.preventDefault();const form=new FormData(e.currentTarget);form.set('kind',kind);form.set('csrf',csrf);form.set('parentId',parent);try{await requestJson('/api/resources',{method:'POST',body:form});setKind('');await onDone();}catch(err){setMessage((err as Error).message)}};
+  return <Dialog open={Boolean(kind)} onOpenChange={open=>!open&&setKind('')}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{kind==='file'?'上傳檔案':kind==='link'?'發表連結':'建立資料夾'}</DialogTitle><DialogDescription>內容會建立在目前所在的位置。</DialogDescription></DialogHeader><form id="create-form" className="form-stack" onSubmit={submit}><label htmlFor="create-title">名稱</label><Input id="create-title" name="title" required placeholder={kind==='folder'?'例如：活動企劃':''}/><label htmlFor="create-description">說明</label><Textarea id="create-description" name="description" placeholder="可留白"/>{kind==='file'&&<><label htmlFor="create-file">選擇檔案</label><Input id="create-file" name="file" type="file" required/></>}{kind==='link'&&<><label htmlFor="create-url">網址</label><Input id="create-url" name="url" type="url" required placeholder="https://"/></>}</form><DialogFooter><Button type="submit" form="create-form">建立</Button></DialogFooter></DialogContent></Dialog>
+}
+
+function DetailDialog({detail,selected,setSelected,setDetail,mode,setMode,csrf,busy,mutate,folders,setFolders,generatedLink,setGeneratedLink,setMessage,openDelete}:{detail:Detail|null;selected:Item|null;setSelected:(v:Item|null)=>void;setDetail:(v:Detail|null)=>void;mode:string;setMode:(v:''|'edit'|'move'|'share'|'versions')=>void;csrf:string;busy:boolean;mutate:(op:string,data?:Record<string,unknown>)=>Promise<void>;folders:Item[];setFolders:(v:Item[])=>void;generatedLink:string;setGeneratedLink:(v:string)=>void;setMessage:(v:string)=>void;openDelete:()=>void}){
+  if(!selected||!detail)return null;const r=detail.resource,owner=r.permission==='owner';
+  const close=()=>{setSelected(null);setDetail(null);setMode('')};
+  const loadFolders=async()=>{const data=await requestJson<{items:Item[]}>('/api/resources?scope=folders');setFolders(data.items);setMode('move')};
+  const edit=async(e:SyntheticEvent<HTMLFormElement>)=>{e.preventDefault();const form=new FormData(e.currentTarget);form.set('operation','edit');form.set('csrf',csrf);try{await requestJson(`/api/resources/${r.id}`,{method:'POST',body:form});location.reload();}catch(err){setMessage((err as Error).message)}};
+  const addMember=async(e:SyntheticEvent<HTMLFormElement>)=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));await mutate('member-add',data)};
+  return <Dialog open onOpenChange={open=>!open&&close()}><DialogContent className="detail-dialog"><DialogHeader><DialogTitle>{mode==='edit'?'編輯內容':mode==='move'?'移動項目':mode==='share'?'共享設定':mode==='versions'?'版本紀錄':r.title}</DialogTitle><DialogDescription>{r.kind==='folder'?'資料夾':formatKind(r)} · {r.owner_name} · {r.permission==='owner'?'擁有者':r.permission==='editor'?'可編輯':'可檢視'}</DialogDescription></DialogHeader>
+    {!mode&&<div className="detail-body"><p>{r.description||'沒有說明'}</p><dl><div><dt>建立時間</dt><dd>{formatDate(r.created_at)}</dd></div><div><dt>最近更新</dt><dd>{formatDate(r.updated_at)}</dd></div><div><dt>版本</dt><dd>第 {r.revision} 版</dd></div></dl><div className="action-grid">{r.kind==='file'&&<a className="action-button" href={`/api/resources/${r.id}/download`}><Download/>下載</a>}{r.kind==='link'&&<a className="action-button" href={r.url||'#'} target="_blank" rel="noreferrer"><LinkIcon/>開啟連結</a>}{['owner','editor'].includes(r.permission)&&<><button disabled={busy} onClick={()=>setMode('edit')}><Pencil/>編輯</button><button disabled={busy} onClick={()=>setMode('versions')}><History/>版本紀錄</button></>}{owner&&<><button disabled={busy} onClick={()=>void loadFolders()}><FolderInput/>移動</button><button disabled={busy} onClick={()=>setMode('share')}><Share2/>共享</button></>}{r.trashed_at?<><button disabled={busy} onClick={()=>void mutate('restore')}><ArchiveRestore/>還原</button><button disabled={busy} className="danger" onClick={openDelete}><Trash2/>永久刪除</button></>:owner&&<button disabled={busy} className="danger" onClick={()=>void mutate('trash')}><Trash2/>移到垃圾桶</button>}</div></div>}
+    {mode==='edit'&&<form className="form-stack" onSubmit={edit}><label htmlFor="edit-title">名稱</label><Input id="edit-title" name="title" defaultValue={r.title} required/><label htmlFor="edit-description">說明</label><Textarea id="edit-description" name="description" defaultValue={r.description}/>{r.kind==='link'&&<><label htmlFor="edit-url">網址</label><Input id="edit-url" type="url" name="url" defaultValue={r.url||''} required/></>}{r.kind==='file'&&<><label htmlFor="edit-file">替換檔案</label><Input id="edit-file" type="file" name="file"/></>}<DialogFooter><Button type="button" variant="outline" onClick={()=>setMode('')}>返回</Button><Button type="submit">儲存</Button></DialogFooter></form>}
+    {mode==='move'&&<div className="form-stack"><button className="folder-choice" onClick={()=>mutate('move',{parentId:''})}><Folder/>檔案庫最上層</button>{folders.filter(f=>f.id!==r.id).map(f=><button className="folder-choice" key={f.id} onClick={()=>mutate('move',{parentId:f.id})}><Folder/>{f.title}<ChevronRight/></button>)}</div>}
+    {mode==='versions'&&<div className="version-list">{detail.versions.map(v=><div className="version-row" key={v.revision}><div><strong>第 {v.revision} 版 {v.revision===r.revision?'· 目前版本':''}</strong><small>{eventLabel(v.event)} · {formatDate(v.created_at)} {v.size_bytes?`· ${formatSize(v.size_bytes)}`:''}</small></div><div>{r.kind==='file'&&<a href={`/api/resources/${r.id}/download?revision=${v.revision}`}><Download/></a>}{v.revision!==r.revision&&<Button size="sm" variant="outline" onClick={()=>mutate('version-restore',{revision:v.revision})}>還原</Button>}</div></div>)}</div>}
+    {mode==='share'&&<div className="share-panel"><label htmlFor="access-level">一般存取</label><select id="access-level" defaultValue={r.access_level} onChange={e=>void mutate('access-level',{level:e.target.value})}><option value="private">僅自己</option><option value="selected">指定成員</option><option value="members">所有已登入成員</option></select><hr/><form onSubmit={addMember} className="share-form"><Input name="recipient" aria-label="學校信箱或完整本名" placeholder="輸入學校信箱或完整本名" required/><select name="role" aria-label="成員權限"><option value="viewer">可檢視</option><option value="editor">可編輯</option></select><Button type="submit"><Users/>共享</Button></form>{detail.members.map(m=><div className="member-row" key={m.id}><span><strong>{m.display_name}</strong><small>{m.email} · {m.role==='editor'?'可編輯':'可檢視'}</small></span><Button variant="ghost" size="icon" onClick={()=>void mutate('member-remove',{userId:m.id})}><X/></Button></div>)}<hr/><div className="link-share"><strong>連結共享</strong><p>取得連結的人仍需用學校帳號登入。</p><div><select id="link-role"><option value="viewer">可檢視</option><option value="editor">可編輯</option></select><Button variant="outline" onClick={async()=>{const el=document.getElementById('link-role') as HTMLSelectElement|null;const data=await requestJson<{url:string}>(`/api/resources/${r.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'link-generate',csrf,role:el?.value})});setGeneratedLink(data.url)}}>建立新連結</Button>{detail.link&&<Button variant="destructive" onClick={()=>void mutate('link-revoke')}>關閉連結</Button>}</div>{generatedLink&&<Input value={generatedLink} readOnly onFocus={e=>e.currentTarget.select()}/>}</div></div>}
+    {mode&&<button className="back-text" onClick={()=>setMode('')}>← 返回項目</button>}
+  </DialogContent></Dialog>
+}
