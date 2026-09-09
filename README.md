@@ -2,6 +2,8 @@
 
 T-Files 是獨立於既有內部系統的學生會檔案與連結管理網站。使用者直接以學校 Google Workspace 帳號登入；第一次登入會自動建立帳號，之後每次登入都會同步學校信箱與 Google 本名。
 
+正式網站：[學生會檔案管理系統](https://tschool-student-files.yuchenglin1029.chatgpt.site)。目前正式環境使用 `cloud/` 內的 Cloudflare Workers、D1 與 R2 版本，電腦關機後仍會運作；專案根目錄保留原本可在本機執行的 Express 版本。
+
 ## 已完成功能
 
 - 任意格式檔案上傳；檔案以隨機名稱存放在網站公開目錄之外，下載前會再次檢查權限。
