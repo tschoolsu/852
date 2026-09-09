@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { config } from "./config.js";
+import { migrateResources } from "./migrations.js";
 
 fs.mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
 
@@ -80,6 +81,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC);
 `);
 
+migrateResources(db, config.dataDir);
 db.exec("PRAGMA optimize;");
 
 export function nowIso() {
@@ -106,13 +108,87 @@ export function listActiveUsers(excludeUserId = "") {
     .all(excludeUserId);
 }
 
-export function createUser({ id, email, displayName, passwordHash, role, status }) {
+export function searchActiveUsers(query, excludeUserId = "", limit = 8) {
+  const text = String(query || "").trim().slice(0, 100);
+  if (text.length < 2) return [];
+  const escaped = text.replace(/[\\%_]/g, "\\$&");
+  return db.prepare(`SELECT id, email, display_name
+    FROM users
+    WHERE status = 'active' AND id != ?
+      AND (email LIKE ? ESCAPE '\\' COLLATE NOCASE OR display_name LIKE ? ESCAPE '\\' COLLATE NOCASE)
+    ORDER BY CASE WHEN email = ? COLLATE NOCASE OR display_name = ? COLLATE NOCASE THEN 0 ELSE 1 END,
+      display_name COLLATE NOCASE, email COLLATE NOCASE
+    LIMIT ?`).all(excludeUserId, `%${escaped}%`, `%${escaped}%`, text, text, Math.min(Math.max(Number(limit) || 8, 1), 20));
+}
+
+export function getActiveUserByEmailOrName(value) {
+  const text = String(value || "").trim().slice(0, 100);
+  if (!text) return { user: null, ambiguous: false };
+  const byEmail = db.prepare("SELECT * FROM users WHERE status = 'active' AND email = ? COLLATE NOCASE").get(text);
+  if (byEmail) return { user: byEmail, ambiguous: false };
+  const byName = db.prepare("SELECT * FROM users WHERE status = 'active' AND display_name = ? COLLATE NOCASE ORDER BY email LIMIT 2").all(text);
+  return { user: byName.length === 1 ? byName[0] : null, ambiguous: byName.length > 1 };
+}
+
+export function createUser({ id, email, displayName, passwordHash, role, status, googleSubject = null }) {
   const now = nowIso();
   db.prepare(
-    `INSERT INTO users (id, email, display_name, password_hash, role, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, email, displayName, passwordHash, role, status, now, now);
+    `INSERT INTO users (id, email, display_name, password_hash, role, status, created_at, updated_at, google_subject)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, email, displayName, passwordHash, role, status, now, now, googleSubject);
   return getUserById(id);
+}
+
+export function createOAuthRegistrationState({ stateHash, codeVerifier, nonce, expiresAt }) {
+  db.prepare(`INSERT INTO oauth_registration_states(state_hash,code_verifier,nonce,expires_at,created_at)
+    VALUES (?,?,?,?,?)`).run(stateHash,codeVerifier,nonce,expiresAt,nowIso());
+}
+
+export function consumeOAuthRegistrationState(stateHash) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const row = db.prepare("SELECT * FROM oauth_registration_states WHERE state_hash=? AND expires_at>?").get(stateHash,nowIso());
+    db.prepare("DELETE FROM oauth_registration_states WHERE state_hash=?").run(stateHash);
+    db.exec("COMMIT");
+    return row || null;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function createVerifiedRegistration({ tokenHash,email,displayName,googleSubject,expiresAt }) {
+  db.prepare(`INSERT INTO verified_registrations(token_hash,email,display_name,google_subject,expires_at,created_at)
+    VALUES (?,?,?,?,?,?)`).run(tokenHash,email,displayName,googleSubject,expiresAt,nowIso());
+}
+
+export function getVerifiedRegistration(tokenHash) {
+  return db.prepare("SELECT * FROM verified_registrations WHERE token_hash=? AND expires_at>?").get(tokenHash,nowIso());
+}
+
+export function createUserFromVerifiedRegistration({ tokenHash,id,passwordHash,role,status }) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const verified = db.prepare("SELECT * FROM verified_registrations WHERE token_hash=? AND expires_at>?").get(tokenHash,nowIso());
+    if (!verified) {
+      db.exec("ROLLBACK");
+      return { outcome:"invalid",user:null };
+    }
+    const existing = db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE OR google_subject=?").get(verified.email,verified.google_subject);
+    db.prepare("DELETE FROM verified_registrations WHERE token_hash=?").run(tokenHash);
+    if (existing) {
+      db.exec("COMMIT");
+      return { outcome:"exists",user:existing };
+    }
+    const now = nowIso();
+    db.prepare(`INSERT INTO users(id,email,display_name,password_hash,role,status,created_at,updated_at,google_subject)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(id,verified.email,verified.display_name,passwordHash,role,status,now,now,verified.google_subject);
+    db.exec("COMMIT");
+    return { outcome:"created",user:getUserById(id) };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function createSession({ tokenHash, userId, csrfToken, expiresAt }) {
@@ -140,6 +216,8 @@ export function pruneExpiredRecords() {
   const now = nowIso();
   db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
   db.prepare("DELETE FROM password_resets WHERE expires_at <= ? OR used_at IS NOT NULL").run(now);
+  db.prepare("DELETE FROM oauth_registration_states WHERE expires_at <= ?").run(now);
+  db.prepare("DELETE FROM verified_registrations WHERE expires_at <= ?").run(now);
 }
 
 export function createPasswordReset({ tokenHash, userId, expiresAt }) {
@@ -184,102 +262,6 @@ export function consumePasswordReset(tokenHash, passwordHash) {
   }
 }
 
-export function createResource(resource, memberIds = []) {
-  const now = nowIso();
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    db.prepare(
-      `INSERT INTO resources
-       (id, kind, title, description, url, storage_key, original_name, mime_type, size_bytes, owner_id, access_level, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      resource.id,
-      resource.kind,
-      resource.title,
-      resource.description || "",
-      resource.url || null,
-      resource.storageKey || null,
-      resource.originalName || null,
-      resource.mimeType || null,
-      resource.sizeBytes ?? null,
-      resource.ownerId,
-      resource.accessLevel,
-      now,
-      now,
-    );
-    const addMember = db.prepare("INSERT OR IGNORE INTO resource_members (resource_id, user_id) VALUES (?, ?)");
-    for (const memberId of memberIds) addMember.run(resource.id, memberId);
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-  return getResourceById(resource.id);
-}
-
-export function getResourceById(id) {
-  return db
-    .prepare(
-      `SELECT r.*, u.display_name AS owner_name, u.email AS owner_email
-       FROM resources r JOIN users u ON u.id = r.owner_id WHERE r.id = ?`,
-    )
-    .get(id);
-}
-
-export function getResourceMemberIds(resourceId) {
-  return db.prepare("SELECT user_id FROM resource_members WHERE resource_id = ?").all(resourceId).map((row) => row.user_id);
-}
-
-export function userCanAccessResource(resourceId, userId) {
-  return Boolean(
-    db
-      .prepare(
-        `SELECT 1 FROM resources r
-         WHERE r.id = ? AND (
-           r.owner_id = ? OR r.access_level = 'members' OR
-           (r.access_level = 'selected' AND EXISTS (
-             SELECT 1 FROM resource_members rm WHERE rm.resource_id = r.id AND rm.user_id = ?
-           ))
-         )`,
-      )
-      .get(resourceId, userId, userId),
-  );
-}
-
-export function listAccessibleResources(userId, search = "") {
-  const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
-  return db
-    .prepare(
-      `SELECT r.*, u.display_name AS owner_name
-       FROM resources r JOIN users u ON u.id = r.owner_id
-       WHERE (r.owner_id = ? OR r.access_level = 'members' OR EXISTS (
-         SELECT 1 FROM resource_members rm WHERE rm.resource_id = r.id AND rm.user_id = ?
-       ))
-       AND (? = '' OR r.title LIKE ? ESCAPE '\\' OR r.original_name LIKE ? ESCAPE '\\')
-       ORDER BY r.created_at DESC`,
-    )
-    .all(userId, userId, search, pattern, pattern);
-}
-
-export function updateResourceAccess(resourceId, ownerId, accessLevel, memberIds = []) {
-  const now = nowIso();
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const result = db
-      .prepare("UPDATE resources SET access_level = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
-      .run(accessLevel, now, resourceId, ownerId);
-    if (result.changes !== 1) throw new Error("RESOURCE_NOT_FOUND");
-    db.prepare("DELETE FROM resource_members WHERE resource_id = ?").run(resourceId);
-    if (accessLevel === "selected") {
-      const addMember = db.prepare("INSERT OR IGNORE INTO resource_members (resource_id, user_id) VALUES (?, ?)");
-      for (const memberId of memberIds) addMember.run(resourceId, memberId);
-    }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-}
 
 export function listPendingUsers() {
   return db

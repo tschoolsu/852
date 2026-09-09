@@ -10,22 +10,15 @@
     <p class="eyebrow">@<%= allowedEmailDomain %></p>
     <h2 id="register-title">建立帳號</h2>
     <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
-    <form method="post" action="/register" class="stack-form">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label>顯示名稱
-        <input type="text" name="displayName" value="<%= values.displayName || '' %>" autocomplete="name" maxlength="80" required>
-      </label>
-      <label>學校電子郵件
-        <input type="email" name="email" value="<%= values.email || '' %>" autocomplete="email" placeholder="name@<%= allowedEmailDomain %>" required>
-      </label>
-      <label>密碼 <span class="label-note">至少 15 個字元</span>
-        <input type="password" name="password" autocomplete="new-password" minlength="15" maxlength="128" required>
-      </label>
-      <label>再次輸入密碼
-        <input type="password" name="passwordConfirm" autocomplete="new-password" minlength="15" maxlength="128" required>
-      </label>
-      <button class="primary-button full" type="submit">建立帳號</button>
-    </form>
+    <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+    <p class="registration-copy">請先登入學校的 Google 帳號。系統會讀取已驗證的學校信箱與本名，並自動把本名設為顯示名稱。</p>
+    <% if (googleReady) { %>
+      <a class="google-button" href="/auth/google/register"><span aria-hidden="true">G</span>使用學校 Google 帳號驗證</a>
+    <% } else { %>
+      <span class="google-button disabled" aria-disabled="true"><span aria-hidden="true">G</span>學校 Google 驗證尚未設定</span>
+      <p class="setup-note">管理員完成 Google OAuth 設定後即可註冊。</p>
+    <% } %>
+    <p class="privacy-note">只讀取姓名與學校信箱，不會取得 Google 密碼、雲端硬碟或其他資料。</p>
     <p class="auth-switch">已經有帳號？<a href="/login">返回登入</a></p>
   </section>
 </main>

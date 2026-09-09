@@ -1,111 +1,100 @@
-<%- include('partials/head', { title: '檔案庫', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/head', { title: history ? '我的上傳紀錄' : (folder ? folder.title : '檔案庫'), bodyClass: 'dashboard-page' }) %>
 <%- include('partials/nav') %>
-<main class="dashboard-shell">
-  <section class="welcome-grid">
+<main class="dashboard-shell drive-shell">
+  <nav class="library-tabs" aria-label="檔案導覽">
+    <a href="/app" <%- !history ? 'aria-current="page"' : '' %>>檔案庫</a>
+    <a href="/uploads" <%- history ? 'aria-current="page"' : '' %>>我的上傳紀錄</a>
+  </nav>
+  <div class="library-title-row">
     <div>
-      <span class="status-chip">已解鎖</span>
-      <h1><%= user.displayName %>，歡迎回來！</h1>
-      <p>今天要整理什麼資料呢？</p>
+      <p class="eyebrow"><%= history ? 'MY UPLOADS' : 'T-FILES / LIBRARY' %></p>
+      <h1><%= history ? '我的上傳紀錄' : folder ? folder.title : '檔案庫' %></h1>
+      <p class="subtle"><%= history ? '你上傳的檔案、發表的連結與建立的資料夾，依建立時間排列。' : folder ? '資料夾內的內容會繼承此資料夾的共享權限。' : '整理自己的檔案，也在這裡找到其他人分享給你的內容。' %></p>
     </div>
-    <div class="pass-card dashboard-pass" aria-hidden="true">
-      <span class="pass-brand">T<span></span>Files</span>
-      <strong><%= user.displayName %></strong>
-      <small>MEMBER / 2026</small>
-      <b></b>
-    </div>
-  </section>
-
-  <% if (notice) { %><div class="notice success page-notice" role="status"><%= notice %></div><% } %>
-
-  <section class="action-section" aria-labelledby="new-resource-title">
-    <div class="section-heading">
-      <div><span class="section-kicker">NEW</span><h2 id="new-resource-title">新增內容</h2></div>
-      <span class="section-note">檔案不公開，只有你授權的人可以開啟</span>
-    </div>
-    <div class="action-grid">
-      <details class="action-card mint" <%= activePanel === 'file' ? 'open' : '' %>>
-        <summary><span class="action-code">01</span><strong>上傳檔案</strong><small>任何檔案格式</small></summary>
+    <% if (folder) { %>
+      <div class="resource-actions">
+        <% if (folder.permission === 'owner') { %><a class="outline-button" href="/resources/<%= folder.id %>/access">共享資料夾</a><% } %>
+        <% if (canCreate) { %><a class="quiet-link" href="/resources/<%= folder.id %>/edit">編輯資料夾</a><% } %>
+        <span class="permission-badge"><%= folder.roleLabel %></span>
+      </div>
+    <% } %>
+  </div>
+  <% if (folder) { %>
+    <nav class="breadcrumbs" aria-label="資料夾路徑">
+      <a href="/app">檔案庫</a>
+      <% breadcrumbs.forEach((crumb,index) => { %>
+        <span aria-hidden="true">/</span>
+        <% if (index === breadcrumbs.length - 1) { %><span aria-current="page"><%= crumb.title %></span>
+        <% } else { %><a href="/app?folder=<%= crumb.id %>"><%= crumb.title %></a><% } %>
+      <% }) %>
+    </nav>
+    <% if (folder.description) { %><p class="folder-description"><%= folder.description %></p><% } %>
+  <% } %>
+  <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
+  <% if (canCreate) { %>
+    <button class="create-fab" type="button" aria-label="新增內容" aria-haspopup="dialog" aria-controls="create-dialog" data-create-open><span aria-hidden="true">＋</span></button>
+    <dialog class="create-dialog" id="create-dialog" aria-labelledby="create-dialog-title" data-create-dialog>
+      <div class="create-dialog-card">
+        <header class="create-dialog-header">
+          <div><p class="eyebrow">NEW</p><h2 id="create-dialog-title">新增內容</h2></div>
+          <button class="dialog-close" type="button" aria-label="關閉新增視窗" data-create-close>×</button>
+        </header>
+        <div class="create-options">
+      <details class="create-option file-option" data-create-kind="file">
+        <summary><span class="create-option-icon">↑</span><span><strong>上傳檔案</strong><small>任何檔案格式</small></span></summary>
         <form method="post" action="/resources/files" enctype="multipart/form-data" class="resource-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-          <label class="file-drop">選擇檔案
-            <input type="file" name="file" required>
-            <span data-file-name>尚未選擇檔案</span>
-          </label>
-          <label>顯示名稱 <span class="label-note">未填時使用原始檔名</span>
-            <input type="text" name="title" maxlength="160">
-          </label>
-          <label>說明 <span class="label-note">選填</span>
-            <textarea name="description" maxlength="500" rows="2"></textarea>
-          </label>
-          <%- include('partials/access-fields', { members }) %>
+          <input type="hidden" name="parentId" value="<%= folder?.id || '' %>">
+          <label class="file-drop">選擇檔案<input type="file" name="file" required><span data-file-name>尚未選擇檔案</span></label>
+          <label>顯示名稱 <span class="label-note">選填</span><input type="text" name="title" maxlength="160"></label>
+          <label>說明<textarea name="description" maxlength="500" rows="2"></textarea></label>
+          <p class="subtle"><%= folder ? '會放入目前資料夾，並繼承共享權限。' : '上傳後預設只有自己能看見，再從「共享」設定權限。' %></p>
           <button class="primary-button" type="submit">上傳到檔案庫</button>
         </form>
       </details>
-
-      <details class="action-card peach" <%= activePanel === 'link' ? 'open' : '' %>>
-        <summary><span class="action-code">02</span><strong>發表連結</strong><small>網站與雲端資源</small></summary>
+      <details class="create-option link-option" data-create-kind="link">
+        <summary><span class="create-option-icon">↗</span><span><strong>發表連結</strong><small>網站與雲端資源</small></span></summary>
         <form method="post" action="/resources/links" class="resource-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-          <label>連結名稱
-            <input type="text" name="title" maxlength="160" required>
-          </label>
-          <label>網址
-            <input type="url" name="url" placeholder="https://" required>
-          </label>
-          <label>說明 <span class="label-note">選填</span>
-            <textarea name="description" maxlength="500" rows="2"></textarea>
-          </label>
-          <%- include('partials/access-fields', { members }) %>
+          <input type="hidden" name="parentId" value="<%= folder?.id || '' %>">
+          <label>連結名稱<input type="text" name="title" maxlength="160" required></label>
+          <label>網址<input type="url" name="url" placeholder="https://" required></label>
+          <label>說明<textarea name="description" maxlength="500" rows="2"></textarea></label>
+          <p class="subtle"><%= folder ? '會繼承目前資料夾的共享權限。' : '建立後可從「共享」指定誰能存取。' %></p>
           <button class="primary-button" type="submit">加入檔案庫</button>
         </form>
       </details>
-    </div>
-  </section>
-
-  <section class="library-section" aria-labelledby="library-title">
+      <details class="create-option folder-option" data-create-kind="folder">
+        <summary><span class="create-option-icon">▰</span><span><strong>建立資料夾</strong><small>整理檔案與連結</small></span></summary>
+        <form method="post" action="/resources/folders" class="resource-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="parentId" value="<%= folder?.id || '' %>">
+          <label>資料夾名稱<input type="text" name="title" maxlength="160" required></label>
+          <label>說明<textarea name="description" maxlength="500" rows="2"></textarea></label>
+          <button class="primary-button" type="submit">建立資料夾</button>
+        </form>
+      </details>
+        </div>
+      </div>
+    </dialog>
+  <% } %>
+  <section class="library-section drive-library" aria-label="內容清單">
     <div class="section-heading library-heading">
-      <div><span class="section-kicker">LIBRARY</span><h2 id="library-title">檔案庫</h2></div>
-      <form method="get" action="/app" class="search-form" role="search">
-        <label class="sr-only" for="resource-search">搜尋檔案或連結</label>
-        <input id="resource-search" type="search" name="q" value="<%= search %>" placeholder="搜尋檔案或連結">
+      <h2><%= history ? '我的建立紀錄' : folder ? '資料夾內容' : '可存取的內容' %> <span class="subtle">(<%= resources.length %>)</span></h2>
+      <form method="get" action="<%= history ? '/uploads' : '/app' %>" class="search-form" role="search">
+        <% if (folder) { %><input type="hidden" name="folder" value="<%= folder.id %>"><% } %>
+        <label class="sr-only" for="resource-search">搜尋名稱</label>
+        <input id="resource-search" type="search" name="q" value="<%= search %>" placeholder="搜尋名稱">
         <button type="submit">搜尋</button>
       </form>
     </div>
-
-    <% if (resources.length === 0) { %>
+    <% if (!resources.length) { %>
       <div class="empty-state">
         <span>00</span>
-        <h3><%= search ? '沒有符合的項目' : '檔案庫目前是空的' %></h3>
-        <p><%= search ? '換一個關鍵字再試一次。' : '從上方上傳第一份檔案，或發表一個連結。' %></p>
+        <h2><%= search ? '沒有符合的項目' : history ? '你還沒有建立內容' : folder ? '這個資料夾目前是空的' : '目前沒有可存取的內容' %></h2>
+        <p><%= search ? '換個關鍵字再試試。' : history ? '你建立的資料夾與上傳的檔案，都會記錄在這裡。' : canCreate ? '使用右下角的加號新增檔案、連結或資料夾。' : '擁有者或可編輯者新增內容後，你就能在這裡查看。' %></p>
       </div>
-    <% } else { %>
-      <div class="resource-list">
-        <% resources.forEach((resource, index) => { %>
-          <article class="resource-row">
-            <span class="resource-number"><%= String(index + 1).padStart(2, '0') %></span>
-            <div class="resource-kind <%= resource.kind %>"><%= resource.kind === 'file' ? 'FILE' : 'LINK' %></div>
-            <div class="resource-main">
-              <h3><%= resource.title %></h3>
-              <% if (resource.description) { %><p><%= resource.description %></p><% } %>
-              <div class="resource-meta">
-                <span><%= resource.owner_name %></span>
-                <span><%= formatDate(resource.created_at) %></span>
-                <% if (resource.kind === 'file') { %><span><%= formatBytes(resource.size_bytes) %></span><% } %>
-                <span><%= resource.access_level === 'private' ? '僅自己' : resource.access_level === 'selected' ? '指定成員' : '所有成員' %></span>
-              </div>
-            </div>
-            <div class="resource-actions">
-              <% if (resource.kind === 'file') { %>
-                <a class="outline-button" href="/resources/<%= resource.id %>/download">下載</a>
-              <% } else { %>
-                <a class="outline-button" href="<%= resource.url %>" target="_blank" rel="noopener noreferrer">開啟</a>
-              <% } %>
-              <% if (resource.owner_id === user.id) { %><a class="quiet-link" href="/resources/<%= resource.id %>/access">權限</a><% } %>
-            </div>
-          </article>
-        <% }) %>
-      </div>
-    <% } %>
+    <% } else { %><%- include('partials/resource-list', { resources }) %><% } %>
   </section>
 </main>
 <%- include('partials/footer') %>

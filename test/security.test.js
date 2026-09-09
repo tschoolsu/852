@@ -16,8 +16,10 @@ test("只接受指定學校網域，且不接受相似網域", () => {
   assert.equal(normalizeEmail(" Member@TSchool.tp.edu.tw "), "member@tschool.tp.edu.tw");
 });
 
-test("密碼長度符合 OWASP 友善原則", () => {
-  assert.equal(validatePassword("short"), "密碼至少需要 15 個字元");
+test("密碼接受 8–128 字元，拒絕過短或過長密碼", () => {
+  assert.equal(validatePassword("1234567"), "密碼至少需要 8 個字元");
+  assert.equal(validatePassword("Eight!42"), null);
+  assert.equal(validatePassword("a".repeat(128)), null);
   assert.equal(validatePassword("長密碼可以包含 空格 與各種字元"), null);
   assert.match(validatePassword("a".repeat(129)), /128/);
 });

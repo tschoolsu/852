@@ -1,0 +1,21 @@
+<%- include('partials/head', { title: '編輯項目', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="single-card-shell top-aligned">
+  <section class="auth-panel access-panel">
+    <p class="eyebrow">EDIT</p><h1>編輯<%= { file:'檔案',link:'連結',folder:'資料夾' }[resource.kind] %></h1>
+    <p class="subtle">目前是第 <%= resource.revision %> 版。變更會同步顯示給所有有權限的成員。</p>
+    <form method="post" action="/resources/<%= resource.id %>/edit" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="revision" value="<%= resource.revision %>">
+      <label>名稱<input type="text" name="title" value="<%= resource.title %>" maxlength="160" required></label>
+      <label>說明<textarea name="description" rows="4" maxlength="500"><%= resource.description %></textarea></label>
+      <% if (resource.kind === 'link') { %><label>網址<input type="url" name="url" value="<%= resource.url %>" required></label><% } %>
+      <% if (resource.kind === 'file') { %>
+        <label class="file-drop">替換檔案（選填）<input type="file" name="file"><span data-file-name>未選擇時保留目前檔案</span></label>
+        <p class="subtle">目前檔案：<%= resource.original_name %>（<%= formatBytes(resource.size_bytes) %>）。上傳新版會替換目前內容，分享權限保持不變。</p>
+      <% } %>
+      <div class="form-row split"><a href="/resources/<%= resource.id %>">取消</a><button class="primary-button" type="submit">儲存修改</button></div>
+    </form>
+  </section>
+</main>
+<%- include('partials/footer') %>

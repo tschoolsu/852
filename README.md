@@ -1,14 +1,18 @@
 # T-Files 學生會檔案管理器
 
-T-Files 是獨立於既有內部系統的學生會檔案與連結管理網站。使用者以 `@tschool.tp.edu.tw` 電子郵件自行註冊、登入，並可將每個檔案或連結設為「僅自己」、「指定成員」或「所有已登入成員」。
+T-Files 是獨立於既有內部系統的學生會檔案與連結管理網站。註冊時以學校 Google Workspace 帳號驗證信箱並自動取得本名，之後以 `@tschool.tp.edu.tw` 信箱及本系統密碼登入。
 
 ## 已完成功能
 
 - 任意格式檔案上傳；檔案以隨機名稱存放在網站公開目錄之外，下載前會再次檢查權限。
-- 網址發表與搜尋。
-- 擁有者可隨時修改存取範圍。
-- 獨立註冊、登入、登出與忘記密碼流程。
-- 僅允許 `@tschool.tp.edu.tw` 網域註冊。
+- 網址發表、資料夾與搜尋；資料夾的共享權限會套用到其中內容。
+- 擁有者可依本名或學校信箱搜尋已註冊成員，授予「可檢視」或「可編輯」。
+- 可編輯者能改名稱、說明、替換檔案、修改連結，也能在共享資料夾中新增內容。
+- 分享連結仍要求對方登入已註冊的學校帳號，可設為可檢視或可編輯並隨時撤銷。
+- 「我的上傳紀錄」只列出目前帳號建立的檔案、連結與資料夾。
+- 註冊頁不接受自行輸入顯示名稱；姓名與信箱取自已驗證的學校 Google 帳號。
+- Google 只用於註冊驗證，不儲存存取權杖；登入、登出與忘記密碼仍由本系統獨立處理。
+- 同時檢查 Google Workspace `hd` 宣告與完整 `@tschool.tp.edu.tw` 信箱。
 - 註冊模式可在「立即啟用」與「管理員審核」之間切換。
 - SMTP 寄送重設密碼信；未設定 SMTP 的開發環境會在執行視窗顯示測試連結。
 - 本機檔案儲存與 S3 相容雲端儲存可切換，支援 Cloudflare R2、AWS S3 等服務。
@@ -26,11 +30,28 @@ npm run dev
 
 開啟 <http://localhost:3000>。第一次使用時直接以學校信箱註冊即可。
 
+Windows 也可以直接按兩下 `start-local.cmd`。啟動後請保持該視窗開啟；關閉視窗或按 `Ctrl+C` 會停止本機網站，之後再次按兩下即可重新啟動。
+
 請在 `.env` 把 `SESSION_SECRET` 改成至少 32 字元的隨機字串。PowerShell 可用以下指令產生：
 
 ```powershell
 [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
+
+## 設定學校 Google 帳號驗證
+
+1. 在 Google Cloud 建立 OAuth 2.0 用戶端，應用程式類型選「網頁應用程式」。
+2. 本機測試的已授權重新導向 URI 填入：`http://localhost:3000/auth/google/callback`。
+3. 將取得的值填入本機 `.env`，不要提交到 Git：
+
+```dotenv
+GOOGLE_CLIENT_ID=你的用戶端ID
+GOOGLE_CLIENT_SECRET=你的用戶端密鑰
+```
+
+4. 重新啟動網站。正式上線時需另加 `https://正式網域/auth/google/callback`，且必須與 `APP_URL` 完全一致。
+
+流程只要求 `openid email profile`，用來取得 Google 簽章驗證過的學校信箱與本名。註冊成功後不保存 Google access token 或 refresh token。
 
 ## SMTP 是什麼？
 
@@ -96,6 +117,8 @@ HOST=0.0.0.0
 APP_URL=https://你的正式網域
 SESSION_SECRET=至少32字元的隨機字串
 TRUST_PROXY=1
+GOOGLE_CLIENT_ID=正式環境的用戶端ID
+GOOGLE_CLIENT_SECRET=正式環境的用戶端密鑰
 ```
 
 請由反向代理或雲端平台提供 HTTPS。正式環境的登入 Cookie 只會透過 HTTPS 傳送。

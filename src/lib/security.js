@@ -14,8 +14,8 @@ export function isAllowedSchoolEmail(email, domain) {
 }
 
 export function validatePassword(password) {
-  if (typeof password !== "string" || password.length < 15) {
-    return "密碼至少需要 15 個字元";
+  if (typeof password !== "string" || password.length < 8) {
+    return "密碼至少需要 8 個字元";
   }
   if (password.length > 128) {
     return "密碼不可超過 128 個字元";

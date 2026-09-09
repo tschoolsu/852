@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { config } from "./config.js";
 
 const objectDir = path.join(config.dataDir, "objects");
@@ -50,6 +50,15 @@ export async function storeUploadedFile(tempPath, key, contentType, contentLengt
 
 export async function removeTempFile(tempPath) {
   if (tempPath) await fsp.rm(tempPath, { force: true });
+}
+
+export async function removeObject(key) {
+  if (!/^[0-9a-f-]{36}$/.test(key)) throw new Error("Invalid object key");
+  if (config.storageDriver === "s3") {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: config.s3.bucket,Key:key }));
+  } else {
+    await fsp.rm(path.join(objectDir,key),{ force:true });
+  }
 }
 
 export async function getObjectStream(key) {

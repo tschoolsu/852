@@ -19,6 +19,10 @@ export const config = {
   trustProxy: process.env.TRUST_PROXY === "1",
   registrationMode: process.env.REGISTRATION_MODE === "approval" ? "approval" : "instant",
   allowedEmailDomain: (process.env.ALLOWED_EMAIL_DOMAIN || "tschool.tp.edu.tw").toLowerCase(),
+  googleOAuth: {
+    clientId: process.env.GOOGLE_CLIENT_ID?.trim() || "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() || "",
+  },
   adminEmails: new Set(
     (process.env.ADMIN_EMAILS || "")
       .split(",")

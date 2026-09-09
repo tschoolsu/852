@@ -1,16 +1,9 @@
 <%- include('partials/head', { title: '登入', bodyClass: 'auth-page' }) %>
 <%- include('partials/nav') %>
 <main class="auth-shell">
-  <section class="auth-intro">
-    <span class="status-chip">校內限定</span>
-    <h1>回到學生會的<br>共同檔案庫。</h1>
+  <section class="auth-intro login-intro">
+    <h1>學生會檔案管理系統</h1>
     <p>使用你的學校帳號登入。</p>
-    <div class="pass-card" aria-hidden="true">
-      <span class="pass-brand">T<span></span>Files</span>
-      <strong>INTERNAL</strong>
-      <small>STUDENT COUNCIL</small>
-      <b></b>
-    </div>
   </section>
   <section class="auth-panel" aria-labelledby="login-title">
     <p class="eyebrow">歡迎回來</p>
@@ -18,6 +11,7 @@
     <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
     <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
     <form method="post" action="/login" class="stack-form">
+      <input type="hidden" name="next" value="<%= nextPath %>">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <label>學校電子郵件
         <input type="email" name="email" value="<%= values.email || '' %>" autocomplete="email" placeholder="name@<%= allowedEmailDomain %>" required autofocus>

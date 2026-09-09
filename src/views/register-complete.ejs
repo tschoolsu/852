@@ -1,0 +1,30 @@
+<%- include('partials/head', { title: '完成註冊', bodyClass: 'auth-page' }) %>
+<%- include('partials/nav') %>
+<main class="auth-shell compact">
+  <section class="auth-intro">
+    <span class="status-chip">身分已驗證</span>
+    <h1>設定這個系統的<br>登入密碼。</h1>
+    <p>之後使用學校信箱與這組密碼登入。</p>
+  </section>
+  <section class="auth-panel" aria-labelledby="register-title">
+    <p class="eyebrow">VERIFIED</p>
+    <h2 id="register-title">完成註冊</h2>
+    <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
+    <div class="verified-identity">
+      <span class="verified-mark" aria-hidden="true">✓</span>
+      <div><strong><%= verified.display_name %></strong><small><%= verified.email %></small></div>
+    </div>
+    <p class="subtle">顯示名稱已從學校 Google 帳號取得，不能在註冊頁自行修改。</p>
+    <form method="post" action="/register/complete" class="stack-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label>密碼 <span class="label-note">至少 8 個字元</span>
+        <input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+      </label>
+      <label>再次輸入密碼
+        <input type="password" name="passwordConfirm" autocomplete="new-password" minlength="8" maxlength="128" required>
+      </label>
+      <button class="primary-button full" type="submit">建立帳號</button>
+    </form>
+  </section>
+</main>
+<%- include('partials/footer') %>

@@ -1,0 +1,29 @@
+<%- include('partials/head', { title: resource.title, bodyClass: 'dashboard-page' }) %>
+<%- include('partials/nav') %>
+<main class="single-card-shell top-aligned">
+  <section class="auth-panel access-panel item-panel">
+    <p class="eyebrow"><%= resource.badge %></p>
+    <h1><%= resource.title %></h1>
+    <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
+    <p class="item-description"><%= resource.description || '沒有說明' %></p>
+    <dl class="item-facts">
+      <div><dt>建立者</dt><dd><%= resource.owner_id === user.id ? '你' : resource.owner_name %></dd></div>
+      <div><dt>我的權限</dt><dd><%= resource.roleLabel %></dd></div>
+      <div><dt>建立日期</dt><dd><%= formatDate(resource.created_at) %></dd></div>
+      <div><dt>最近更新</dt><dd><%= formatDate(resource.updated_at) %> · 第 <%= resource.revision %> 版</dd></div>
+      <% if (resource.kind === 'file') { %>
+        <div><dt>原始檔名</dt><dd><%= resource.original_name %></dd></div>
+        <div><dt>檔案大小</dt><dd><%= formatBytes(resource.size_bytes) %></dd></div>
+      <% } %>
+    </dl>
+    <div class="item-actions">
+      <% if (resource.kind === 'file') { %><a class="primary-button" href="/resources/<%= resource.id %>/download">下載檔案</a>
+      <% } else { %><a class="primary-button" href="<%= resource.url %>" target="_blank" rel="noopener noreferrer">開啟連結 ↗</a><% } %>
+      <% if (['owner','editor'].includes(resource.permission)) { %><a class="outline-button" href="/resources/<%= resource.id %>/edit">編輯</a><% } %>
+      <% if (resource.permission === 'owner') { %><a class="outline-button" href="/resources/<%= resource.id %>/access">共享</a><% } %>
+    </div>
+    <% if (parent) { %><a class="back-link" href="/app?folder=<%= parent.id %>">返回「<%= parent.title %>」</a>
+    <% } else { %><a class="back-link" href="/app">返回檔案庫</a><% } %>
+  </section>
+</main>
+<%- include('partials/footer') %>

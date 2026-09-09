@@ -1,33 +1,69 @@
-<%- include('partials/head', { title: '調整權限', bodyClass: 'dashboard-page' }) %>
+<%- include('partials/head', { title: '共享', bodyClass: 'dashboard-page' }) %>
 <%- include('partials/nav') %>
 <main class="single-card-shell top-aligned">
   <section class="auth-panel access-panel">
-    <p class="eyebrow">ACCESS</p>
-    <h1>調整存取權限</h1>
-    <p class="resource-context"><strong><%= resource.title %></strong><br>只有你可以變更這個項目的存取範圍。</p>
-    <% if (error) { %><div class="notice error" role="alert"><%= error %></div><% } %>
-    <form method="post" action="/resources/<%= resource.id %>/access" class="stack-form">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <fieldset class="permission-options">
-        <legend class="sr-only">存取範圍</legend>
-        <label><input type="radio" name="accessLevel" value="private" <%= resource.access_level === 'private' ? 'checked' : '' %> data-access-radio><span><strong>僅自己</strong><small>只有你能看見與下載</small></span></label>
-        <label><input type="radio" name="accessLevel" value="selected" <%= resource.access_level === 'selected' ? 'checked' : '' %> data-access-radio><span><strong>指定成員</strong><small>由你選擇可存取的人</small></span></label>
-        <label><input type="radio" name="accessLevel" value="members" <%= resource.access_level === 'members' ? 'checked' : '' %> data-access-radio><span><strong>所有已登入成員</strong><small>任何已啟用帳號皆可存取</small></span></label>
-      </fieldset>
-      <div class="member-picker standalone" data-selected-members <%= resource.access_level === 'selected' ? '' : 'hidden' %>>
-        <% members.forEach(member => { %>
-          <label class="member-option">
-            <input type="checkbox" name="memberIds" value="<%= member.id %>" <%= selectedIds.has(member.id) ? 'checked' : '' %>>
-            <span><strong><%= member.display_name %></strong><small><%= member.email %></small></span>
-          </label>
-        <% }) %>
-        <% if (members.length === 0) { %><p>目前沒有其他已啟用成員。</p><% } %>
-      </div>
-      <div class="form-row split">
-        <a href="/app">取消</a>
-        <button class="primary-button" type="submit">儲存權限</button>
-      </div>
-    </form>
+    <p class="eyebrow">SHARE</p>
+    <h1>共享「<%= resource.title %>」</h1>
+    <p class="subtle">只有已註冊並登入的學校帳號可以存取。編輯者可修改內容，分享設定由擁有者管理。</p>
+    <% if (notice) { %><div class="notice success" role="status"><%= notice %></div><% } %>
+    <% if (resource.parent_id) { %><div class="notice">此項目會繼承上層資料夾權限。移除這裡的個別共享，不會移除從資料夾繼承的權限。</div><% } %>
+    <% if (resource.kind === 'folder') { %><p class="subtle">分享此資料夾會同時開放裡面的檔案與子資料夾；編輯者也可以在其中新增內容。</p><% } %>
+    <% if (resource.access_level === 'members') { %><div class="notice">此項目仍保留舊版「所有成員可檢視」設定。按下「移除直接共享」可取消。</div><% } %>
+    <section class="sharing-section" aria-labelledby="email-sharing">
+      <h2 id="email-sharing">指定成員</h2>
+      <form method="post" action="/resources/<%= resource.id %>/access" class="stack-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="action" value="grant">
+        <label>學校信箱或本名
+          <span class="user-combobox">
+            <input type="text" name="recipient" placeholder="輸入信箱或本名" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="share-user-results" data-user-search data-search-url="/resources/<%= resource.id %>/share-users" required>
+            <span id="share-user-results" class="user-results" role="listbox" hidden data-user-results></span>
+          </span>
+        </label>
+        <label>權限<select name="role"><option value="viewer">可檢視</option><option value="editor">可編輯</option></select></label>
+        <button class="primary-button" type="submit">新增／更新共享</button>
+      </form>
+      <div class="grant-row"><div><strong><%= resource.owner_name %>（你）</strong><small><%= resource.owner_email %></small></div><span>擁有者</span></div>
+      <% grants.forEach(grant => { %>
+        <div class="grant-row">
+          <div><strong><%= grant.display_name %></strong><small><%= grant.email %></small><small><%= grant.role === 'editor' ? '可編輯' : '可檢視' %><%= grant.status === 'active' ? '' : ' · 帳號未啟用' %></small></div>
+          <form method="post" action="/resources/<%= resource.id %>/access">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="action" value="remove">
+            <input type="hidden" name="userId" value="<%= grant.user_id %>"><button class="text-button" type="submit">移除</button>
+          </form>
+        </div>
+      <% }) %>
+      <% if (!grants.length) { %><p class="subtle">尚未指定其他成員。</p><% } %>
+    </section>
+    <section class="sharing-section" aria-labelledby="link-sharing">
+      <h2 id="link-sharing">連結共享</h2>
+      <form method="post" action="/resources/<%= resource.id %>/access" class="stack-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="action" value="link">
+        <label>持有連結且已登入的學校成員
+          <select name="role">
+            <option value="off" <%= !resource.link_token ? 'selected' : '' %>>關閉</option>
+            <option value="viewer" <%= resource.link_token && resource.link_role === 'viewer' ? 'selected' : '' %>>可檢視</option>
+            <option value="editor" <%= resource.link_token && resource.link_role === 'editor' ? 'selected' : '' %>>可編輯</option>
+          </select>
+        </label>
+        <% if (shareUrl) { %>
+          <label>分享網址<input type="text" value="<%= shareUrl %>" readonly data-share-url></label>
+          <button type="button" class="outline-button" data-copy-share>複製連結</button>
+          <span class="subtle" role="status" data-copy-status></span>
+          <label class="member-option"><input type="checkbox" name="rotate" value="yes"><span>重新產生連結（舊連結立即失效）</span></label>
+        <% } %>
+        <button class="primary-button" type="submit">儲存連結設定</button>
+      </form>
+    </section>
+    <section class="sharing-section">
+      <h2><%= resource.parent_id ? '移除直接共享' : '自己' %></h2>
+      <p class="subtle"><%= resource.parent_id ? '移除指定 Email 及分享連結；上層資料夾權限仍會繼承。' : '移除所有指定 Email 與分享連結，恢復只有自己可以存取。' %></p>
+      <form method="post" action="/resources/<%= resource.id %>/access">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="action" value="private">
+        <button class="outline-button" type="submit">移除直接共享</button>
+      </form>
+    </section>
+    <a class="back-link" href="/resources/<%= resource.id %>">返回<%= resource.kind === 'folder' ? '資料夾' : '項目' %></a>
   </section>
 </main>
 <%- include('partials/footer') %>

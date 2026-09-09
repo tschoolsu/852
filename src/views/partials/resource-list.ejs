@@ -1,0 +1,25 @@
+<div class="resource-list">
+  <% resources.forEach((resource,index) => { %>
+    <article class="resource-row" data-resource-id="<%= resource.id %>">
+      <span class="resource-number"><%= String(index+1).padStart(2,'0') %></span>
+      <div class="resource-kind <%= resource.badgeTone %>" title="<%= resource.kind === 'file' ? resource.original_name : resource.kind === 'link' ? '網站連結' : '資料夾' %>"><%= resource.badge %></div>
+      <div class="resource-main">
+        <h3><a href="/resources/<%= resource.id %>"><%= resource.title %></a></h3>
+        <% if (resource.description) { %><p><%= resource.description %></p><% } %>
+        <div class="resource-meta">
+          <span><%= resource.owner_id === user.id ? '我建立的' : resource.owner_name + ' 建立' %></span>
+          <span><%= formatDate(resource.created_at) %></span>
+          <% if (resource.kind === 'file') { %><span><%= formatBytes(resource.size_bytes) %></span><% } %>
+          <span><%= resource.roleLabel %></span>
+          <% if (resource.permission === 'owner') { %><span><%= resource.sharingLabel %></span><% } %>
+        </div>
+      </div>
+      <div class="resource-actions">
+        <% if (resource.kind === 'file') { %><a class="outline-button" href="/resources/<%= resource.id %>/download">下載</a>
+        <% } else { %><a class="outline-button" href="/resources/<%= resource.id %>">開啟</a><% } %>
+        <% if (['owner','editor'].includes(resource.permission)) { %><a class="quiet-link" href="/resources/<%= resource.id %>/edit">編輯</a><% } %>
+        <% if (resource.permission === 'owner') { %><a class="quiet-link" href="/resources/<%= resource.id %>/access">共享</a><% } %>
+      </div>
+    </article>
+  <% }) %>
+</div>
