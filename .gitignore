@@ -6,4 +6,4 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .cloud-site-git/
-cloud-site.tar.gz
+cloud-site*.tar.gz
