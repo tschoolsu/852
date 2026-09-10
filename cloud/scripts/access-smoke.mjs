@@ -2,7 +2,7 @@ import { createHmac, createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const port=3210;
+const port=3212;
 const origin=`http://127.0.0.1:${port}`;
 const secret='local-access-smoke-secret';
 const csrf='smoke-csrf';
@@ -13,7 +13,7 @@ const wranglerBin=fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.j
 const config='dist/server/wrangler.json';
 
 function wrangler(args) {
-  const result=spawnSync(process.execPath,[wranglerBin,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
+  const result=spawnSync(process.execPath,[wranglerBin,...args,'--persist-to','work/access-smoke-state'],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
   if(result.status!==0) throw new Error(`${result.stdout}\n${result.stderr}`);
 }
 
@@ -36,7 +36,7 @@ const statements=[
 ];
 wrangler(['d1','execute','site-creator-d1','--local','--config',config,'--command',`${statements.join(';')};`]);
 
-const server=spawn(process.execPath,[wranglerBin,'dev','--config',config,'--port',String(port),'--var',`SESSION_SECRET:${secret}`,'--var','ALLOWED_EMAIL_DOMAIN:tschool.tp.edu.tw','--var',`APP_URL:${origin}`],{stdio:['ignore','pipe','pipe']});
+const server=spawn(process.execPath,[wranglerBin,'dev','--config',config,'--port',String(port),'--persist-to','work/access-smoke-state','--var',`SESSION_SECRET:${secret}`,'--var','ALLOWED_EMAIL_DOMAIN:tschool.tp.edu.tw','--var',`APP_URL:${origin}`],{stdio:['ignore','pipe','pipe']});
 let logs=''; server.stdout.on('data',chunk=>{logs+=chunk}); server.stderr.on('data',chunk=>{logs+=chunk});
 
 const cookie=name=>`tfiles_session=${tokens[name]}`;

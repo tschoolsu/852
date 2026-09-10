@@ -7,8 +7,8 @@ const title=(value:unknown)=>{const v=textValue(value).trim().slice(0,180); if(!
 const description=(value:unknown)=>textValue(value).trim().slice(0,4000);
 const role=(value:unknown)=>value==='editor'?'editor':'viewer';
 
-async function resourceAccess(request:Request,id:string,share='',allowTrashed=false) {
-  const {user}=await requireUser(request),access=await loadAccess(user,share);
+async function resourceAccess(request:Request,id:string,share='',allowTrashed=false,auth?:Awaited<ReturnType<typeof requireUser>>) {
+  const {user}=auth || await requireUser(request),access=await loadAccess(user,share);
   const resource=access.map.get(id); if(!resource || (!allowTrashed && access.hiddenByTrash(resource))) throw httpError(404,'找不到這個項目。');
   const permission=access.permission(resource); if(!permission) throw httpError(404,'找不到這個項目。');
   return {user,resource,permission,access};
@@ -58,10 +58,12 @@ export async function GET(request:Request,context:Context) {
       const id=path[1],share=url.searchParams.get('share') || '';
       if(path[2]==='download') return await download(request,id,share,url.searchParams.get('revision'));
       const {user,resource,permission}=await resourceAccess(request,id,share,url.searchParams.get('trash')==='1');
-      const owner=await first<{display_name:string;email:string}>('SELECT display_name,email FROM users WHERE id=?',resource.owner_id);
-      const versions=['owner','editor'].includes(permission)?await all('SELECT revision,event,actor_id,original_name,size_bytes,created_at FROM resource_versions WHERE resource_id=? ORDER BY revision DESC',id):[];
-      const members=resource.owner_id===user.id?await all(`SELECT u.id,u.email,u.display_name,m.role FROM resource_members m JOIN users u ON u.id=m.user_id WHERE m.resource_id=? ORDER BY u.display_name`,id):[];
-      const link=resource.owner_id===user.id?await first<{role:string}>('SELECT role FROM share_links WHERE resource_id=?',id):null;
+      const [owner,versions,members,link]=await Promise.all([
+        first<{display_name:string;email:string}>('SELECT display_name,email FROM users WHERE id=?',resource.owner_id),
+        ['owner','editor'].includes(permission)?all('SELECT revision,event,actor_id,original_name,size_bytes,created_at FROM resource_versions WHERE resource_id=? ORDER BY revision DESC',id):[],
+        resource.owner_id===user.id?all(`SELECT u.id,u.email,u.display_name,m.role FROM resource_members m JOIN users u ON u.id=m.user_id WHERE m.resource_id=? ORDER BY u.display_name`,id):[],
+        resource.owner_id===user.id?first<{role:string}>('SELECT role FROM share_links WHERE resource_id=?',id):null,
+      ]);
       return json({resource:publicResource(resource,permission,owner||undefined),versions,members,link});
     }
     throw httpError(404,'找不到頁面。');
@@ -86,7 +88,7 @@ async function createResource(request:Request) {
   const auth=await requireUser(request),form=await request.formData(); requireCsrf(request,auth.csrf,textValue(form.get('csrf')));
   const kind=textValue(form.get('kind')),parentId=textValue(form.get('parentId')) || null;
   if(!['file','link','folder'].includes(kind)) throw httpError(400,'未知的項目類型。');
-  if(parentId) { const parentAccess=await resourceAccess(request,parentId); if(parentAccess.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(parentAccess.permission); }
+  if(parentId) { const parentAccess=await resourceAccess(request,parentId,'',false,auth); if(parentAccess.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(parentAccess.permission); }
   const id=crypto.randomUUID(),created=now(); let storageKey:string|null=null,originalName:string|null=null,mimeType:string|null=null,sizeBytes:number|null=null,url:string|null=null;
   if(kind==='link') url=safeUrl(textValue(form.get('url')));
   if(kind==='file') {
@@ -109,7 +111,7 @@ async function mutateResource(request:Request,id:string) {
   if(contentType.includes('multipart/form-data')) { const f=await request.formData(); body=Object.fromEntries(f.entries()); const value=f.get('file'); file=value instanceof File?value:null; }
   else body=await request.json() as Record<string,unknown>;
   requireCsrf(request,auth.csrf,textValue(body.csrf)); const operation=textValue(body.operation) || 'edit';
-  const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation)),resource=state.resource;
+  const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation),auth),resource=state.resource;
   if(operation==='edit') {
     assertEditor(state.permission); const nextRevision=resource.revision+1; let storageKey=resource.storage_key,originalName=resource.original_name,mimeType=resource.mime_type,sizeBytes=resource.size_bytes;
     if(resource.kind==='file' && file?.size) { if(file.size>100*1024*1024) throw httpError(413,'免費雲端版本單一檔案最多 100 MB。'); storageKey=`files/${id}/${crypto.randomUUID()}`; originalName=file.name.slice(0,240); mimeType=file.type||'application/octet-stream'; sizeBytes=file.size; await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType},customMetadata:{originalName}}); }
@@ -120,20 +122,20 @@ async function mutateResource(request:Request,id:string) {
   }
   if(operation==='move') {
     assertOwner(resource,auth.user.id); const parentId=textValue(body.parentId)||null; if(parentId===id) throw httpError(400,'資料夾不能移到自己裡面。');
-    if(parentId) { const dest=await resourceAccess(request,parentId); if(dest.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(dest.permission);
+    if(parentId) { const dest=await resourceAccess(request,parentId,'',false,auth); if(dest.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(dest.permission);
       let cursor:Resource|undefined=dest.resource; while(cursor){if(cursor.id===id) throw httpError(400,'資料夾不能移到自己的子資料夾。'); cursor=cursor.parent_id?dest.access.map.get(cursor.parent_id):undefined;} }
     const next={...resource,parent_id:parentId,revision:resource.revision+1,updated_at:now()}; await run('UPDATE resources SET parent_id=?,revision=?,updated_at=? WHERE id=?',parentId,next.revision,next.updated_at,id);
     await snapshot(next,'moved',auth.user.id,next.revision); await audit(auth.user.id,'resource.moved',id,{parentId}); return json({ok:true});
   }
   if(operation==='trash') {
-    assertOwner(resource,auth.user.id); const access=await loadAccess(auth.user); const subtree=new Set<string>([id]); let changed=true;
+    assertOwner(resource,auth.user.id); const access=state.access; const subtree=new Set<string>([id]); let changed=true;
     while(changed){changed=false; for(const row of access.resources) if(row.parent_id&&subtree.has(row.parent_id)&&!subtree.has(row.id)){subtree.add(row.id);changed=true;}}
     for(const row of access.resources) if(row.parent_id&&subtree.has(row.parent_id)&&row.owner_id!==auth.user.id) await run('UPDATE resources SET parent_id=NULL,updated_at=? WHERE id=?',now(),row.id);
     await run('UPDATE resources SET trashed_at=?,updated_at=? WHERE id=?',now(),now(),id); await audit(auth.user.id,'resource.trashed',id); return json({ok:true});
   }
   if(operation==='restore') { assertOwner(resource,auth.user.id); if(!resource.trashed_at) throw httpError(409,'項目不在垃圾桶。'); await run('UPDATE resources SET trashed_at=NULL,updated_at=? WHERE id=?',now(),id); await audit(auth.user.id,'resource.restored',id); return json({ok:true}); }
   if(operation==='delete') {
-    assertOwner(resource,auth.user.id); if(!resource.trashed_at) throw httpError(409,'請先將項目移到垃圾桶。'); const rows=await all<Resource>('SELECT * FROM resources'),subtree=new Set<string>([id]); let changed=true;
+    assertOwner(resource,auth.user.id); if(!resource.trashed_at) throw httpError(409,'請先將項目移到垃圾桶。'); const rows=state.access.resources,subtree=new Set<string>([id]); let changed=true;
     while(changed){changed=false; for(const row of rows) if(row.parent_id&&subtree.has(row.parent_id)&&!subtree.has(row.id)){if(row.owner_id!==auth.user.id) throw httpError(409,'資料夾中仍有其他成員擁有的內容。');subtree.add(row.id);changed=true;}}
     const ids=[...subtree],keys=new Set<string>(); for(const rid of ids){for(const v of await all<{storage_key:string|null}>('SELECT storage_key FROM resource_versions WHERE resource_id=?',rid))if(v.storage_key)keys.add(v.storage_key); const current=rows.find(r=>r.id===rid);if(current?.storage_key)keys.add(current.storage_key);}
     for(const rid of ids){await run('DELETE FROM resource_members WHERE resource_id=?',rid);await run('DELETE FROM share_links WHERE resource_id=?',rid);await run('DELETE FROM resource_versions WHERE resource_id=?',rid);await run('DELETE FROM resources WHERE id=?',rid);} if(keys.size)await env.FILES.delete([...keys]);
