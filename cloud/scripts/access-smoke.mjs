@@ -77,9 +77,10 @@ try {
   const sharedByName=await api('/api/resources/private-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'member-add',csrf,recipient:'一般成員',role:'viewer'})});
   assert(sharedByName.status===200&&sharedByName.data.notificationSent===false&&Boolean(sharedByName.data.warning),'依本名共享或未設定寄信服務的回應不正確');
 
-  const fileForm=new FormData(); fileForm.set('kind','file'); fileForm.set('csrf',csrf); fileForm.set('parentId','folder-shared'); fileForm.set('title','測試文字檔'); fileForm.set('description','R2 smoke'); fileForm.set('file',new File(['version one'],'sample.txt',{type:'text/plain'}));
+  const fileForm=new FormData(); fileForm.set('kind','file'); fileForm.set('csrf',csrf); fileForm.set('parentId','folder-shared'); fileForm.set('description','R2 smoke'); fileForm.set('file',new File(['version one'],'sample.txt',{type:'text/plain'}));
   const created=await api('/api/resources',{method:'POST',body:fileForm}); assert(created.status===201,'檔案上傳失敗');
   const fileId=created.data.id;
+  const createdDetail=await api(`/api/resources/${fileId}`); assert(createdDetail.data.resource.title==='sample.txt','未填名稱時沒有使用原始檔名');
   const download=await fetch(`${origin}/api/resources/${fileId}/download`,{headers:{Cookie:cookie('owner')}}); assert(download.status===200&&await download.text()==='version one','檔案下載內容不符');
   const replacement=new FormData(); replacement.set('operation','edit'); replacement.set('csrf',csrf); replacement.set('title','測試文字檔 v2'); replacement.set('description','replaced'); replacement.set('file',new File(['version two'],'sample-v2.txt',{type:'text/plain'}));
   const replaced=await api(`/api/resources/${fileId}`,{method:'POST',body:replacement}); assert(replaced.status===200,'替換檔案失敗');
@@ -89,7 +90,7 @@ try {
   assert((await api('/api/resources/viewer-item?trash=1')).status===200,'垃圾桶項目無法開啟');
   assert((await api('/api/resources/viewer-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'restore',csrf})})).status===200,'垃圾桶還原失敗');
 
-  console.log('Access smoke tests passed: 23 checks across owner, editor, viewer, outsider, name sharing, notification fallback, link sharing, R2 upload/download, versions, CSRF, trash and restore.');
+  console.log('Access smoke tests passed: 24 checks across owner, editor, viewer, outsider, default upload names, name sharing, notification fallback, link sharing, R2 upload/download, versions, CSRF, trash and restore.');
 } catch(error) {
   console.error(logs);
   throw error;
