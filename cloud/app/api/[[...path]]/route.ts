@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { authPost } from '@/lib/local-auth';
 import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, sha256, snapshot, token, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
@@ -73,6 +74,7 @@ export async function GET(request:Request,context:Context) {
 export async function POST(request:Request,context:Context) {
   try {
     const path=(await context.params).path || [];
+    if(path[0]==='auth'&&path.length===2)return await authPost(request,path[1]);
     if(path[0]==='logout') {
       const auth=await requireUser(request),body=await parseBody(request); requireCsrf(request,auth.csrf,textValue(body.csrf));
       const raw=(request.headers.get('cookie')||'').match(/(?:^|;\s*)tfiles_session=([^;]+)/)?.[1]; if(raw) await run('DELETE FROM sessions WHERE token_hash=?',await sessionHash(decodeURIComponent(raw)));

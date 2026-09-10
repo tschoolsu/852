@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import {mailConfigured,sendMail} from './mail';
 
 export type User = { id:string; email:string; display_name:string; role:string; status:string };
 export type Resource = {
@@ -63,7 +64,7 @@ export async function currentUser(request:Request):Promise<{user:User;csrf:strin
 }
 
 export async function requireUser(request:Request) {
-  const auth=await currentUser(request); if(!auth) throw httpError(401,'請先使用學校 Google 帳號登入。'); return auth;
+  const auth=await currentUser(request); if(!auth) throw httpError(401,'請先使用學校信箱與密碼登入。'); return auth;
 }
 
 export function requireCsrf(request:Request,expected:string,provided?:string) {
@@ -129,16 +130,11 @@ export async function snapshot(resource:Resource,event:string,actorId:string,rev
     resource.original_name,resource.mime_type,resource.size_bytes,resource.parent_id,event,actorId,now());
 }
 
-const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char] || char));
-
 export async function sendShareNotification(request:Request,input:{recipient:string;recipientName:string;senderName:string;resourceTitle:string;permission:string}) {
-  if(!env.RESEND_API_KEY || !env.SHARE_EMAIL_FROM) return {sent:false,reason:'尚未設定寄信服務'};
-  const permission=input.permission==='editor'?'可編輯':'可檢視',site=appOrigin(request);
-  const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({
-    from:env.SHARE_EMAIL_FROM,to:[input.recipient],subject:`${input.senderName} 與你共享「${input.resourceTitle}」`,
-    text:`${input.recipientName}，${input.senderName} 已在學生會檔案管理系統與你共享「${input.resourceTitle}」（${permission}）。登入查看：${site}`,
-    html:`<p>${escapeHtml(input.recipientName)}，</p><p>${escapeHtml(input.senderName)} 已在學生會檔案管理系統與你共享「<strong>${escapeHtml(input.resourceTitle)}</strong>」（${permission}）。</p><p><a href="${escapeHtml(site)}">登入查看</a></p>`,
-  })});
-  if(!response.ok) return {sent:false,reason:`寄信服務回傳 ${response.status}`};
-  return {sent:true,reason:''};
+  if(!mailConfigured())return {sent:false,reason:'尚未設定 Brevo 寄信服務'};
+  const permission=input.permission==='editor'?'可編輯':'可檢視';
+  try{
+    await sendMail(input.recipient,input.senderName+' 與你共享「'+input.resourceTitle+'」',input.recipientName+'，'+input.senderName+' 已在學生會檔案管理系統與你共享「'+input.resourceTitle+'」（'+permission+'）。登入查看：'+appOrigin(request));
+    return {sent:true,reason:''};
+  }catch{return {sent:false,reason:'寄信服務暫時無法使用'};}
 }

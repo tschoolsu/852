@@ -43,3 +43,15 @@ export const auditLog = sqliteTable('audit_log', {
   id: integer('id').primaryKey({ autoIncrement: true }), actorId: text('actor_id'), action: text('action').notNull(),
   targetId: text('target_id'), details: text('details').notNull().default('{}'), createdAt: text('created_at').notNull(),
 }, (t) => [index('idx_audit_log_created').on(t.createdAt)]);
+
+export const passwordCredentials = sqliteTable('password_credentials', {
+  userId:text('user_id').primaryKey(), passwordHash:text('password_hash').notNull(),
+  verifiedAt:text('verified_at').notNull(), changedAt:text('changed_at').notNull(),
+});
+export const authTokens = sqliteTable('auth_tokens', {
+  tokenHash:text('token_hash').primaryKey(), email:text('email').notNull(),
+  purpose:text('purpose').notNull(), expiresAt:text('expires_at').notNull(), createdAt:text('created_at').notNull(),
+},t=>[index('idx_auth_tokens_email').on(t.email),index('idx_auth_tokens_expires').on(t.expiresAt)]);
+export const authRateLimits = sqliteTable('auth_rate_limits', {
+  key:text('key').primaryKey(), hits:integer('hits').notNull(), expiresAt:integer('expires_at').notNull(),
+},t=>[index('idx_auth_rate_expires').on(t.expiresAt)]);

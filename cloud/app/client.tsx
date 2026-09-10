@@ -1,4 +1,5 @@
 'use client';
+import AuthPanel,{ProfileDialog} from './auth-panel';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { ArchiveRestore, ChevronRight, Download, File, FileImage, FileText, Folder, FolderInput, History, Link as LinkIcon, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2, Upload, Users, X } from 'lucide-react';
@@ -35,6 +36,7 @@ const formatKind=(item:Item)=>item.kind==='folder'?'資料夾':item.kind==='link
 const eventLabel=(event:string)=>({created:'建立',updated:'修改',moved:'移動',version_restored:'還原舊版本'}[event]||event);
 
 export default function ClientApp(){
+  const [profileOpen,setProfileOpen]=useState(false);
   const [user,setUser]=useState<User|null>(null),[csrf,setCsrf]=useState(''),[checking,setChecking]=useState(true);
   const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'>('accessible');
   const [parent,setParent]=useState(''),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[mobile,setMobile]=useState(false);
@@ -70,12 +72,12 @@ export default function ClientApp(){
   };
 
   if(checking)return <div className="loading-screen"><div className="loading-mark">T</div><p>正在開啟檔案庫…</p></div>;
-  if(!user)return <Login error={typeof window==='undefined'?'':new URLSearchParams(window.location.search).get('error')||''}/>;
+  if(!user)return <AuthPanel onSignedIn={async()=>{const data=await requestJson<{user:User;csrf:string}>('/api/me');setUser(data.user);setCsrf(data.csrf)}}/>;
 
   return <div className="app-shell">
     <header className="topbar"><button className="mobile-menu" onClick={()=>setMobile(v=>!v)} aria-label="開啟選單"><Menu/></button><div className="brand"><span className="brand-mark">T</span><div><strong>學生會檔案管理系統</strong><small>TSchool 學生會數位部</small></div></div>
       <label className="search-box"><Search/><input disabled={busy} value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜尋檔案、連結或資料夾"/></label>
-      <div className="account"><span><strong>{user.displayName}</strong><small>{user.email}{user.role==='admin'?' · 管理員':''}</small></span><Button variant="ghost" size="icon" aria-label="登出" onClick={async()=>{await requestJson('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf})});location.href='/';}}><LogOut/></Button></div>
+      <div className="account"><span><strong>{user.displayName}</strong><small>{user.email}{user.role==='admin'?' · 管理員':''}</small></span><Button variant="ghost" size="icon" aria-label="修改顯示名稱" onClick={()=>setProfileOpen(true)}><Pencil/></Button><Button variant="ghost" size="icon" aria-label="登出" onClick={async()=>{await requestJson('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf})});location.href='/';}}><LogOut/></Button></div>
     </header>
     <aside className={`sidebar ${mobile?'sidebar-open':''}`}><button className="sidebar-close" onClick={()=>setMobile(false)}><X/></button><p className="nav-label">檔案庫</p>
       <Nav active={scope==='accessible'} icon={<Folder/>} label="可存取的內容" onClick={()=>{if(mutationLock.current)return;setScope('accessible');setParent('');setMobile(false)}}/>
@@ -93,13 +95,13 @@ export default function ClientApp(){
       </div>
     </main>
     {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2"><DropdownMenuItem onClick={()=>setCreateKind('file')}><Upload/>上傳檔案</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    {profileOpen&&<ProfileDialog name={user.displayName} csrf={csrf} onClose={()=>setProfileOpen(false)} onSaved={displayName=>{setUser({...user,displayName});void load()}}/>}
     <CreateDialog key={createKind} kind={createKind} setKind={setCreateKind} csrf={csrf} parent={parent} onDone={refresh}/>
     <DetailDialog close={closeDetail} error={operationError} status={operationLabel} detail={detail} selected={selected} mode={mode} setMode={setMode} busy={busy} mutate={mutate} folders={folders} setFolders={setFolders} generatedLink={generatedLink} setMessage={setOperationError} openDelete={()=>{setOperationError('');setConfirmDelete(true)}}/>
     <AlertDialog open={confirmDelete} onOpenChange={open=>{if(!mutationLock.current){setConfirmDelete(open);setOperationError('')}}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久刪除這個項目？</AlertDialogTitle><AlertDialogDescription>所有版本與檔案內容都會永久刪除，無法還原。</AlertDialogDescription></AlertDialogHeader>{operationError&&<div className="notice" role="alert">{operationError}</div>}<OperationStatus active={busy} label={operationLabel}/><AlertDialogFooter><AlertDialogCancel disabled={busy}>取消</AlertDialogCancel><AlertDialogAction disabled={busy} className="danger-solid" onClick={()=>mutate('delete')}>{busy?'正在刪除…':'永久刪除'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;
 }
 
-function Login({error}:{error:string}){return <main className="login-page"><section className="login-intro"><div className="brand light"><span className="brand-mark">T</span><strong>學生會內部服務</strong></div><div><h1>學生會檔案<br/>管理系統</h1><p>使用你的學校 Google 帳號登入</p></div><small>T Files © 2026 TSchool 學生會數位部</small></section><section className="login-panel"><div className="login-card"><p className="eyebrow">歡迎回來</p><h2>登入</h2><p>第一次登入會自動建立帳號，並從 Google 同步學校信箱與本名。</p>{error&&<div className="notice">{error}</div>}{/* oxlint-disable-next-line next/no-html-link-for-pages -- OAuth must perform a full-page navigation. */}<a className="google-button" href="/auth/google"><span>G</span>使用學校 Google 帳號登入</a><small>僅接受 @tschool.tp.edu.tw 的學校帳號<br/>系統不會取得或保存你的 Google 密碼</small></div></section></main>}
 
 function Nav({active,icon,label,onClick}:{active:boolean;icon:ReactNode;label:string;onClick:()=>void}){return <button className={`nav-item ${active?'active':''}`} onClick={onClick}>{icon}<span>{label}</span></button>}
 function KindIcon({item}:{item:Item}){const Icon=item.kind==='folder'?Folder:item.kind==='link'?LinkIcon:item.mime_type?.startsWith('image/')?FileImage:item.mime_type==='application/pdf'?FileText:File;return <span className={`kind-icon ${item.kind}`}><Icon/><small>{formatKind(item)}</small></span>}

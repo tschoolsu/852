@@ -11,5 +11,11 @@ declare namespace Cloudflare {
     APP_URL?: string;
     RESEND_API_KEY?: string;
     SHARE_EMAIL_FROM?: string;
+    SMTP_HOST?: string;
+    SMTP_PORT?: string;
+    SMTP_USER?: string;
+    SMTP_PASSWORD?: string;
+    SMTP_FROM_EMAIL?: string;
+    SMTP_FROM_NAME?: string;
   }
 }

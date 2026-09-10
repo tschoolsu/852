@@ -4,11 +4,12 @@
 
 ## 功能
 
-- 直接用 `@tschool.tp.edu.tw` Google 帳號登入，第一次登入自動建立帳號並同步 Google 本名。
+- 僅接受 `@tschool.tp.edu.tw` 信箱註冊；先驗證信箱，再自行設定顯示名稱及獨立密碼（8～128 字元）。
+- 忘記密碼透過 Brevo SMTP 寄送一次性連結；舊 Google 帳號由此設定密碼，沿用原使用者 ID、檔案與管理員權限。Google OAuth 入口只會導回獨立登入頁。
 - 上傳任意格式檔案、發表連結、建立及移動資料夾。
 - 擁有者可設僅自己、指定已登入成員或所有已登入成員；指定成員與登入後共享連結均可分成可檢視或可編輯。
 - 我的上傳紀錄、垃圾桶、還原、永久刪除、完整版本紀錄與舊版本還原。
-- 指定成員共享後可透過 Resend 寄出通知信；未設定寄信服務時，介面會明確提示通知未寄出。
+- 驗證、密碼重設與共享通知均透過 Brevo SMTP 寄信。
 
 ## 本機開發
 
@@ -24,22 +25,22 @@ npm start
 本機環境值放在不會提交的 `.dev.vars`。正式環境值由 Sites 管理：
 
 ```dotenv
-GOOGLE_CLIENT_ID=Google OAuth 網頁用戶端 ID
-GOOGLE_CLIENT_SECRET=Google OAuth 網頁用戶端密鑰
 SESSION_SECRET=至少 32 位元組的安全亂數
 APP_URL=https://tschool-student-files.yuchenglin1029.chatgpt.site
 ALLOWED_EMAIL_DOMAIN=tschool.tp.edu.tw
 ADMIN_EMAILS=11430106@tschool.tp.edu.tw
 REGISTRATION_MODE=instant
-RESEND_API_KEY=選填，Resend API Key
-SHARE_EMAIL_FROM=選填，例如 T-Files <files@你的已驗證網域>
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=465
+SMTP_USER=Brevo SMTP 頁面的登入帳號
+SMTP_PASSWORD=Brevo SMTP key（不是 API key）
+SMTP_FROM_EMAIL=Brevo 已驗證的寄件者信箱
+SMTP_FROM_NAME=學生會檔案管理系統
 ```
 
-Google OAuth 用戶端需加入以下重新導向 URI：
+密碼以 PBKDF2-HMAC-SHA256（600,000 次、每筆隨機 salt）保存。密碼設定連結 30 分鐘到期，資料庫僅存 token 的 SHA-256，使用後立即失效；完成重設會撤銷舊登入。登入與寄信有 IP／信箱限流。重設 token 放在 URL fragment，避免送進 HTTP 路徑及 Referer。
 
-```text
-https://tschool-student-files.yuchenglin1029.chatgpt.site/auth/google/callback
-```
+上線前需驗證寄件者並設定 SMTP 密鑰，實測投遞後再切換正式登入。保留舊 Google 欄位僅為資料相容，新帳號使用唯一 local 標記，不會交換 Google token。
 
 ## 驗證
 
@@ -47,6 +48,7 @@ https://tschool-student-files.yuchenglin1029.chatgpt.site/auth/google/callback
 npm run lint
 npm run build
 npm run test:access
+node scripts/auth-smoke.mjs
 npm audit --omit=dev
 ```
 
