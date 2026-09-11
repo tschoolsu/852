@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { createHmac, createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -89,6 +90,26 @@ try {
   assert((await api('/api/resources/viewer-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'trash',csrf})})).status===200,'移到垃圾桶失敗');
   assert((await api('/api/resources/viewer-item?trash=1')).status===200,'垃圾桶項目無法開啟');
   assert((await api('/api/resources/viewer-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'restore',csrf})})).status===200,'垃圾桶還原失敗');
+
+
+  const batch=(ids,operation,data={},as='owner')=>api('/api/selection',{as,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,operation,csrf,...data})});
+  assert((await batch(['private-item'],'trash',{csrf:'wrong'})).status===403,'批次操作未檢查 CSRF');
+  assert((await batch(['viewer-item'],'trash',{},'viewer')).data.results[0].ok===false,'檢視者可批次刪除別人內容');
+  const shared=await batch(['viewer-item','private-item'],'member-add',{recipient:'viewer@tschool.tp.edu.tw',role:'viewer'});assert(shared.data.results.every(r=>r.ok),'批次共享失敗');
+  const links=await batch(['viewer-item','private-item'],'link-generate',{role:'viewer'});assert(links.data.results.every(r=>r.url?.includes('/s/')),'批次共享連結未產生');
+  const mixed=await batch(['viewer-item','missing-id'],'move',{parentId:'members-item'});assert(mixed.data.results[0].ok&&!mixed.data.results[1].ok,'部分失敗沒有分開回報');
+  assert((await api('/api/resources/viewer-item')).data.resource.parent_id==='members-item','批次移動未生效');
+  assert(!(await batch(['folder-shared'],'move',{parentId:'folder-shared'})).data.results[0].ok,'可將資料夾移入自己');
+  const zipResponse=await fetch(origin+'/api/selection',{method:'POST',headers:{Cookie:cookie('owner'),'Content-Type':'application/json'},body:JSON.stringify({ids:['folder-shared',fileId],operation:'download',csrf})});
+  assert(zipResponse.status===200&&zipResponse.headers.get('content-type')==='application/zip','資料夾 ZIP 下載失敗');writeFileSync('work/selection-test.zip',Buffer.from(await zipResponse.arrayBuffer()));
+  const deniedZip=await batch(['folder-shared'],'download',{},'outsider');assert(deniedZip.status===404,'可下載未授權資料夾');
+  const trashed=await batch(['folder-shared',fileId],'trash');assert(trashed.data.results.length===1&&trashed.data.results[0].ok,'父子項目重複刪除');
+  assert((await batch(['folder-shared'],'download')).status===404,'可下載垃圾桶內容');
+  assert((await batch(['folder-shared'],'restore')).data.results[0].ok,'批次還原失敗');
+  assert((await batch([fileId],'trash')).data.results[0].ok,'測試檔案移入垃圾桶失敗');
+  assert((await batch([fileId],'delete')).data.results[0].ok,'批次永久刪除失敗');
+  assert((await api('/api/resources/'+fileId+'?trash=1')).status===404,'永久刪除後仍能存取');
+  console.log('Batch checks passed: sharing, share links, move, permission denial, CSRF, partial failure, ZIP, ancestor deduplication, trash, restore and permanent deletion.');
 
   console.log('Access smoke tests passed: 24 checks across owner, editor, viewer, outsider, default upload names, name sharing, notification fallback, link sharing, R2 upload/download, versions, CSRF, trash and restore.');
 } catch(error) {

@@ -1,3 +1,4 @@
+import { zipStream, type ZipEntry } from '@/lib/zip';
 import { env } from 'cloudflare:workers';
 import { authPost } from '@/lib/local-auth';
 import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, sha256, snapshot, token, type Resource } from '@/lib/cloud';
@@ -80,6 +81,7 @@ export async function POST(request:Request,context:Context) {
       const raw=(request.headers.get('cookie')||'').match(/(?:^|;\s*)tfiles_session=([^;]+)/)?.[1]; if(raw) await run('DELETE FROM sessions WHERE token_hash=?',await sessionHash(decodeURIComponent(raw)));
       return json({ok:true},200,{'Set-Cookie':clearCookie('tfiles_session')});
     }
+    if(path[0]==='selection') return await selection(request);
     if(path[0]==='resources' && path.length===1) return await createResource(request);
     if(path[0]==='resources' && path[1]) return await mutateResource(request,path[1]);
     throw httpError(404,'找不到頁面。');
@@ -175,4 +177,38 @@ async function download(request:Request,id:string,share:string,revision:string|n
 
 function handle(error:unknown) {
   const e=error as Error & {status?:number;publicMessage?:string}; if(!e.publicMessage)console.error(error); return json({error:e.publicMessage||'系統暫時無法完成操作。'},e.status||500);
+}
+
+async function selection(request:Request) {
+  const body=await request.json() as Record<string,unknown>,auth=await requireUser(request);requireCsrf(request,auth.csrf,textValue(body.csrf));
+  const ids=Array.isArray(body.ids)?[...new Set(body.ids.filter((id):id is string=>typeof id==='string'))]:[];
+  if(!ids.length||ids.length>500)throw httpError(400,'每次請選取 1 至 500 個項目。');
+  const operation=textValue(body.operation),share=textValue(body.share),access=await loadAccess(auth.user,share);
+  if(!['download','trash','restore','delete','move','member-add','link-generate','access-level','link-revoke'].includes(operation))throw httpError(400,'未知的批次操作。');
+  // Normalize parent/child selections so a folder operation never flattens or repeats its children.
+  const selected=new Set(ids);
+  const roots=ids.filter(id=>{let r=access.map.get(id);const seen=new Set<string>([id]);while(r?.parent_id&&!seen.has(r.parent_id)){if(selected.has(r.parent_id)&&operation!=='restore')return false;seen.add(r.parent_id);r=access.map.get(r.parent_id);}return true;});
+  if(operation==='download') {
+    const entries:ZipEntry[]=[],seen=new Set<string>(),used=new Set<string>();let total=0;
+    // oxlint-disable-next-line no-control-regex -- Strip unsafe ZIP path characters, including control bytes.
+    const clean=(s:string)=>s.replace(/[\\/\x00-\x1f:*?"<>|]/g,'_').replace(/^\.+$/,'_').slice(0,180)||'未命名';
+    const add=async(r:Resource,parentPath:string)=>{
+      if(seen.has(r.id)||access.hiddenByTrash(r)||!access.permission(r))return;seen.add(r.id);
+      let base=clean(r.title);if(r.kind==='file'){const ext=r.original_name?.match(/\.[^.]+$/)?.[0];if(ext&&!base.toLowerCase().endsWith(ext.toLowerCase()))base+=clean(ext);}if(r.kind==='link')base+='.url';
+      let name=parentPath+base,n=2;while(used.has(name.toLowerCase()))name=parentPath+base+' ('+(n++)+')';used.add(name.toLowerCase());
+      if(r.kind==='folder'){entries.push({name:name+'/',size:0,open:async()=>new Blob([]).stream()});for(const child of access.resources.filter(x=>x.parent_id===r.id))await add(child,name+'/');}
+      else if(r.kind==='link'){const content=new TextEncoder().encode('[InternetShortcut]\r\nURL='+safeUrl(r.url||'')+'\r\n');entries.push({name,size:content.length,open:async()=>new Blob([content]).stream()});total+=content.length;}
+      else {if(!r.storage_key)throw httpError(404,'找不到檔案內容。');const key=r.storage_key,head=await env.FILES.head(key);if(!head)throw httpError(404,'找不到檔案內容：'+r.title);total+=head.size;entries.push({name,size:head.size,open:async()=>{const object=await env.FILES.get(key);if(!object)throw new Error('檔案內容已移除');return object.body;}});}
+      if(total>512*1024*1024||entries.length>10000)throw httpError(413,'此次下載超過 512 MB 或 10,000 個項目，請分批下載。');
+    };
+    for(const id of roots){const r=access.map.get(id);if(!r||access.hiddenByTrash(r)||!access.permission(r))throw httpError(404,'部分選取項目已無法存取，請重新整理。');await add(r,'');}
+    await audit(auth.user.id,'resource.selection_downloaded',null,{ids:roots,count:entries.length});
+    return new Response(zipStream(entries),{headers:{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="student-files.zip"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+  }
+  const results=[];
+  for(const id of roots){
+    try{const response=await mutateResource(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify({...body,ids:undefined})}),id);const data=await response.json() as {warning?:string;url?:string};results.push({id,ok:true,...data});}
+    catch(error){const e=error as Error&{publicMessage?:string};results.push({id,ok:false,error:e.publicMessage||'操作未完成，請重新整理確認。'});}
+  }
+  return json({results});
 }

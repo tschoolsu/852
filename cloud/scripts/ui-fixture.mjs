@@ -34,6 +34,10 @@ http.createServer(async(req,res)=>{
     }
     await new Promise(resolve=>setTimeout(resolve,delay));
     if(failNext){failNext=false;return json({error:'測試：連線失敗，請再試一次。'},503);}
+    if(req.method==='POST'&&url.pathname==='/api/selection') {
+      if(body.operation==='download'){res.writeHead(200,{'content-type':'application/zip'});return res.end('fixture');}
+      const results=body.ids.map(id=>{const r=records.find(r=>r.id===id);if(!r)return {id,ok:false,error:'找不到項目'};if(body.operation==='trash')r.trashed_at=new Date().toISOString();if(body.operation==='restore')r.trashed_at=null;if(body.operation==='delete')records=records.filter(x=>x.id!==id);if(body.operation==='move')r.parent_id=body.parentId||null;return {id,ok:true,...(body.operation==='link-generate'?{url:'https://example.com/s/'+id}:{})};});return json({results});
+    }
     if(req.method==='POST') {
       if(url.pathname==='/api/resources') {
         const file=body.file;
