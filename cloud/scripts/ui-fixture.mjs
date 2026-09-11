@@ -40,8 +40,8 @@ http.createServer(async(req,res)=>{
     }
     if(req.method==='POST') {
       if(url.pathname==='/api/resources') {
-        const file=body.file;
-        records.push({...records[0],id:crypto.randomUUID(),kind:body.kind,title:body.title||file?.name,original_name:file?.name,mime_type:file?.type,description:body.description,url:body.url,trashed_at:null});
+        const file=body.file,id=crypto.randomUUID();
+        records.push({...records[0],id,parent_id:body.parentId||null,kind:body.kind,title:body.title||file?.name,original_name:file?.name,mime_type:file?.type,description:body.description,url:body.url,trashed_at:null});return json({ok:true,id},201);
       } else {
         const id=url.pathname.split('/')[3],r=records.find(r=>r.id===id);
         if(body.operation==='delete') records=records.filter(r=>r.id!==id);
@@ -51,7 +51,7 @@ http.createServer(async(req,res)=>{
       }
       return json({ok:true});
     }
-    if(url.pathname==='/api/resources') return json({items:records.filter(r=>url.searchParams.get('scope')==='trash'?r.trashed_at:!r.trashed_at),folder:null});
+    if(url.pathname==='/api/resources') return json({items:records.filter(r=>url.searchParams.get('scope')==='trash'?r.trashed_at:!r.trashed_at&&(url.searchParams.get('scope')==='folders'?r.kind==='folder':(r.parent_id||'')===(url.searchParams.get('parent')||''))),folder:records.find(r=>r.id===url.searchParams.get('parent'))||null});
     const resource=records.find(r=>r.id===url.pathname.split('/')[3]);
     return json({resource,versions:[],members:[],link:null});
   }catch(error){json({error:error.message},500);}

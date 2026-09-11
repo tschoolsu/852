@@ -3,6 +3,7 @@ import AuthPanel,{ProfileDialog} from './auth-panel';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { ArchiveRestore, ChevronRight, Download, File, FileImage, FileText, Folder, FolderInput, History, Link as LinkIcon, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2, Upload, Users, X } from 'lucide-react';
+import { UploadQueue } from './upload-queue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -97,8 +98,9 @@ export default function ClientApp(){
       </div>
       <BulkActions items={items.filter(item=>checkedIds.has(item.id))} trash={scope==='trash'} csrf={csrf} share={share} disabled={busy||loading||Boolean(listError)} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={async failed=>{await load();setCheckedIds(new Set(failed));}}/>
     </main>
-    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2"><DropdownMenuItem onClick={()=>setCreateKind('file')}><Upload/>上傳檔案</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2"><DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
     {profileOpen&&<ProfileDialog name={user.displayName} csrf={csrf} onClose={()=>setProfileOpen(false)} onSaved={displayName=>{setUser({...user,displayName});void load()}}/>}
+    <UploadQueue csrf={csrf} parent={parent} destination={folder?.title||'檔案庫最上層'} disabled={busy} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={load}/>
     <CreateDialog key={createKind} kind={createKind} setKind={setCreateKind} csrf={csrf} parent={parent} onDone={refresh}/>
     <DetailDialog close={closeDetail} error={operationError} status={operationLabel} detail={detail} selected={selected} mode={mode} setMode={setMode} busy={busy} mutate={mutate} folders={folders} setFolders={setFolders} generatedLink={generatedLink} setMessage={setOperationError} openDelete={()=>{setOperationError('');setConfirmDelete(true)}}/>
     <AlertDialog open={confirmDelete} onOpenChange={open=>{if(!mutationLock.current){setConfirmDelete(open);setOperationError('')}}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久刪除這個項目？</AlertDialogTitle><AlertDialogDescription>所有版本與檔案內容都會永久刪除，無法還原。</AlertDialogDescription></AlertDialogHeader>{operationError&&<div className="notice" role="alert">{operationError}</div>}<OperationStatus active={busy} label={operationLabel}/><AlertDialogFooter><AlertDialogCancel disabled={busy}>取消</AlertDialogCancel><AlertDialogAction disabled={busy} className="danger-solid" onClick={()=>mutate('delete')}>{busy?'正在刪除…':'永久刪除'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>

@@ -78,6 +78,14 @@ try {
   const sharedByName=await api('/api/resources/private-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'member-add',csrf,recipient:'一般成員',role:'viewer'})});
   assert(sharedByName.status===200&&sharedByName.data.notificationSent===false&&Boolean(sharedByName.data.warning),'依本名共享或未設定寄信服務的回應不正確');
 
+  for(const [filename,uploadTitle,notes] of [['multi-a.txt','改名檔案.txt','第一份說明'],['multi-b.txt','','第二份說明']]) {
+    const form=new FormData();form.set('kind','file');form.set('csrf',csrf);form.set('parentId','private-item');form.set('title',uploadTitle);form.set('description',notes);form.set('file',new File(['bytes-'+filename],filename,{type:'text/plain'}));
+    const uploaded=await api('/api/resources',{method:'POST',body:form});assert(uploaded.status===201,'多檔佇列上傳失敗');
+    const detail=await api('/api/resources/'+uploaded.data.id);assert(detail.data.resource.parent_id==='private-item'&&detail.data.resource.title===(uploadTitle||filename)&&detail.data.resource.description===notes,'多檔名稱、說明或資料夾不符');
+    const downloaded=await fetch(origin+'/api/resources/'+uploaded.data.id+'/download',{headers:{Cookie:cookie('owner')}});assert(downloaded.status===200&&await downloaded.text()==='bytes-'+filename,'多檔下載內容不符');
+  }
+  console.log('Multi-upload storage checks passed: two files, separate metadata, default name, folder destination and exact download bytes.');
+
   const fileForm=new FormData(); fileForm.set('kind','file'); fileForm.set('csrf',csrf); fileForm.set('parentId','folder-shared'); fileForm.set('description','R2 smoke'); fileForm.set('file',new File(['version one'],'sample.txt',{type:'text/plain'}));
   const created=await api('/api/resources',{method:'POST',body:fileForm}); assert(created.status===201,'檔案上傳失敗');
   const fileId=created.data.id;
