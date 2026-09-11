@@ -37,6 +37,7 @@ const eventLabel=(event:string)=>({created:'建立',updated:'修改',moved:'移�
 
 export default function ClientApp(){
   const [profileOpen,setProfileOpen]=useState(false);
+  const [checkedIds,setCheckedIds]=useState<Set<string>>(new Set());
   const [user,setUser]=useState<User|null>(null),[csrf,setCsrf]=useState(''),[checking,setChecking]=useState(true);
   const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'>('accessible');
   const [parent,setParent]=useState(''),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[mobile,setMobile]=useState(false);
@@ -47,7 +48,7 @@ export default function ClientApp(){
   const share=typeof window==='undefined'?'':new URLSearchParams(window.location.search).get('share')||'';
 
   const load=useCallback(async(signal?:AbortSignal)=>{
-    if(!user)return;const id=++listRequest.current;setLoading(true);setListError('');
+    if(!user)return;const id=++listRequest.current;setLoading(true);setListError('');setCheckedIds(new Set());
     try{const params=new URLSearchParams({scope,parent,q:query,share});const data=await requestJson<{items:Item[];folder:Item|null}>(`/api/resources?${params}`,{signal});if(id===listRequest.current){setItems(data.items);setFolder(data.folder);}}
     catch(e){if(id===listRequest.current&&!signal?.aborted)setListError((e as Error).message);}
     finally{if(id===listRequest.current)setLoading(false);}
@@ -89,8 +90,9 @@ export default function ClientApp(){
       {message&&<div className="notice" role="alert">{message}</div>}
       {listError&&<div className="notice" role="alert">{listError}<Button variant="outline" onClick={()=>void load()}>重新載入清單</Button></div>}
       {loading&&<OperationStatus active label="正在載入清單…"/>}
-      <div className="file-table" aria-busy={loading}><div className="file-row file-header"><span>類型</span><span>名稱</span><span>擁有者</span><span>更新時間</span><span></span></div>
-        {items.map(item=><button className="file-row" key={item.id} disabled={busy||loading} onClick={()=>openDetail(item)}><KindIcon item={item}/><span className="file-name"><strong>{item.title}</strong><small>{item.description || formatKind(item)}{item.size_bytes?` · ${formatSize(item.size_bytes)}`:''}</small></span><span>{item.owner_name||'—'}</span><span>{formatDate(item.updated_at)}</span><MoreHorizontal/></button>)}
+      <div className="selection-toolbar"><label><input type="checkbox" aria-label="全選目前清單" disabled={busy||loading||Boolean(listError)||!items.length} checked={items.length>0&&checkedIds.size===items.length} ref={node=>{if(node)node.indeterminate=checkedIds.size>0&&checkedIds.size<items.length}} onChange={e=>setCheckedIds(e.target.checked?new Set(items.map(item=>item.id)):new Set())}/>全選目前清單</label><output>已選取 {checkedIds.size} 項</output>{checkedIds.size>0&&<Button variant="ghost" size="sm" disabled={busy} onClick={()=>setCheckedIds(new Set())}>取消選取</Button>}</div>
+      <div className="file-table" aria-busy={loading}><div className="file-row file-header selection-header"><span>類型</span><span>名稱</span><span>擁有者</span><span>更新時間</span><span></span></div>
+        {items.map(item=><div className={`selectable-row ${checkedIds.has(item.id)?'row-selected':''}`} key={item.id}><label className="row-check"><input type="checkbox" aria-label={`選取 ${item.title}`} checked={checkedIds.has(item.id)} disabled={busy||loading||Boolean(listError)} onChange={e=>{const checked=e.target.checked;setCheckedIds(current=>{const next=new Set(current);if(checked)next.add(item.id);else next.delete(item.id);return next;});}}/></label><button className="file-row" disabled={busy||loading} onClick={()=>openDetail(item)}><KindIcon item={item}/><span className="file-name"><strong>{item.title}</strong><small>{item.description || formatKind(item)}{item.size_bytes?` · ${formatSize(item.size_bytes)}`:''}</small></span><span>{item.owner_name||'—'}</span><span>{formatDate(item.updated_at)}</span><MoreHorizontal/></button></div>)}
         {!loading&&!listError&&!items.length&&<div className="empty"><span>{scope==='trash'?'00':'+'}</span><h2>{query?'找不到符合的內容':scope==='trash'?'垃圾桶是空的':'這裡還沒有內容'}</h2><p>{scope==='trash'?'刪除的檔案、連結與資料夾會出現在這裡。':'使用右下角的加號新增第一個項目。'}</p></div>}
       </div>
     </main>
