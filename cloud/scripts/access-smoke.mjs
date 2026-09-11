@@ -89,6 +89,12 @@ try {
   const fileForm=new FormData(); fileForm.set('kind','file'); fileForm.set('csrf',csrf); fileForm.set('parentId','folder-shared'); fileForm.set('description','R2 smoke'); fileForm.set('file',new File(['version one'],'sample.txt',{type:'text/plain'}));
   const created=await api('/api/resources',{method:'POST',body:fileForm}); assert(created.status===201,'檔案上傳失敗');
   const fileId=created.data.id;
+  const filesOnly=await api('/api/resources?scope=files',{as:'editor'});assert(filesOnly.data.items.length===1&&filesOnly.data.items[0].id===fileId&&filesOnly.data.items.every(r=>r.kind==='file'),'檔案專區未跨資料夾篩選或洩漏未授權檔案');
+  const linksOnly=await api('/api/resources?scope=links',{as:'editor'});assert(linksOnly.data.items.length===1&&linksOnly.data.items[0].id==='child-link','連結專區未顯示繼承權限的子項目');
+  const searched=await api('/api/resources?scope=links&q='+encodeURIComponent('編輯者已修改'),{as:'editor'});assert(searched.data.items.length===1,'連結專區搜尋失敗');
+  assert((await api('/api/resources?scope=files&q=nonexistent-query',{as:'owner'})).data.items.length===0,'專區搜尋未篩選');
+  assert((await fetch(origin+'/api/resources?scope=files')).status===401,'未登入可使用檔案專區');
+  console.log('File/link area checks passed: type filter, nested items, inherited access, search and login restriction.');
   const createdDetail=await api(`/api/resources/${fileId}`); assert(createdDetail.data.resource.title==='sample.txt','未填名稱時沒有使用原始檔名');
   const download=await fetch(`${origin}/api/resources/${fileId}/download`,{headers:{Cookie:cookie('owner')}}); assert(download.status===200&&await download.text()==='version one','檔案下載內容不符');
   const replacement=new FormData(); replacement.set('operation','edit'); replacement.set('csrf',csrf); replacement.set('title','測試文字檔 v2'); replacement.set('description','replaced'); replacement.set('file',new File(['version two'],'sample-v2.txt',{type:'text/plain'}));

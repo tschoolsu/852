@@ -48,6 +48,7 @@ export async function GET(request:Request,context:Context) {
         if(access.hiddenByTrash(r) || !access.permission(r)) return false;
         if(scope==='mine' && r.owner_id!==user.id) return false;
         if(scope==='folders') return r.kind==='folder' && ['owner','editor'].includes(access.permission(r));
+        if(scope==='files'||scope==='links') return r.kind===(scope==='files'?'file':'link')&&(!q||r.title.toLowerCase().includes(q)||r.description.toLowerCase().includes(q));
         const visibleParent=r.parent_id && access.map.get(r.parent_id) && access.permission(access.map.get(r.parent_id)!) && !access.hiddenByTrash(access.map.get(r.parent_id)!) ? r.parent_id : '';
         if(!q && visibleParent!==parent) return false;
         return !q || r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q);

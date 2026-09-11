@@ -40,7 +40,7 @@ export default function ClientApp(){
   const [profileOpen,setProfileOpen]=useState(false);
   const [checkedIds,setCheckedIds]=useState<Set<string>>(new Set());
   const [user,setUser]=useState<User|null>(null),[csrf,setCsrf]=useState(''),[checking,setChecking]=useState(true);
-  const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'>('accessible');
+  const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'|'files'|'links'>('accessible');
   const [parent,setParent]=useState(''),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[mobile,setMobile]=useState(false);
   const [createKind,setCreateKind]=useState<''|'file'|'link'|'folder'>(''),[selected,setSelected]=useState<Item|null>(null),[detail,setDetail]=useState<Detail|null>(null);
   const [mode,setMode]=useState<''|'edit'|'move'|'share'|'versions'>(''),[folders,setFolders]=useState<Item[]>([]),[confirmDelete,setConfirmDelete]=useState(false),[generatedLink,setGeneratedLink]=useState('');
@@ -83,11 +83,13 @@ export default function ClientApp(){
     </header>
     <aside className={`sidebar ${mobile?'sidebar-open':''}`}><button className="sidebar-close" onClick={()=>setMobile(false)}><X/></button><p className="nav-label">檔案庫</p>
       <Nav active={scope==='accessible'} icon={<Folder/>} label="可存取的內容" onClick={()=>{if(mutationLock.current)return;setScope('accessible');setParent('');setMobile(false)}}/>
+      <Nav active={scope==='files'} icon={<File/>} label="檔案" onClick={()=>{if(mutationLock.current)return;setScope('files');setParent('');setMobile(false)}}/>
+      <Nav active={scope==='links'} icon={<LinkIcon/>} label="連結" onClick={()=>{if(mutationLock.current)return;setScope('links');setParent('');setMobile(false)}}/>
       <Nav active={scope==='mine'} icon={<Upload/>} label="我的上傳紀錄" onClick={()=>{if(mutationLock.current)return;setScope('mine');setParent('');setMobile(false)}}/>
       <Nav active={scope==='trash'} icon={<Trash2/>} label="垃圾桶" onClick={()=>{if(mutationLock.current)return;setScope('trash');setParent('');setMobile(false)}}/>
       <div className="sidebar-note"><strong>學校帳號限定</strong><p>只有登入過本系統的 @tschool.tp.edu.tw 成員可被指定共享。</p></div>
     </aside>
-    <main className="content"><div className="page-head"><div><p className="eyebrow">{scope==='mine'?'MY UPLOADS':scope==='trash'?'TRASH':'LIBRARY'}</p><h1>{folder?.title || (scope==='mine'?'我的上傳紀錄':scope==='trash'?'垃圾桶':'可存取的內容')}</h1><p>{scope==='trash'?'只有擁有者可以還原或永久刪除。':'集中管理學生會的檔案、網址與資料夾。'}</p></div>{parent&&<Button variant="outline" disabled={busy} onClick={()=>setParent(folder?.parent_id||'')}>回上一層</Button>}</div>
+    <main className="content"><div className="page-head"><div><p className="eyebrow">{scope==='mine'?'MY UPLOADS':scope==='trash'?'TRASH':scope==='files'?'FILES':scope==='links'?'LINKS':'LIBRARY'}</p><h1>{folder?.title || (scope==='mine'?'我的上傳紀錄':scope==='trash'?'垃圾桶':scope==='files'?'檔案專區':scope==='links'?'連結專區':'可存取的內容')}</h1><p>{scope==='trash'?'只有擁有者可以還原或永久刪除。':scope==='files'?'顯示所有資料夾中你可存取的檔案。':scope==='links'?'顯示所有資料夾中你可存取的連結。':'集中管理學生會的檔案、網址與資料夾。'}</p></div>{parent&&<Button variant="outline" disabled={busy} onClick={()=>setParent(folder?.parent_id||'')}>回上一層</Button>}</div>
       {message&&<div className="notice" role="alert">{message}</div>}
       {listError&&<div className="notice" role="alert">{listError}<Button variant="outline" onClick={()=>void load()}>重新載入清單</Button></div>}
       {loading&&<OperationStatus active label="正在載入清單…"/>}
@@ -98,7 +100,7 @@ export default function ClientApp(){
       </div>
       <BulkActions items={items.filter(item=>checkedIds.has(item.id))} trash={scope==='trash'} csrf={csrf} share={share} disabled={busy||loading||Boolean(listError)} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={async failed=>{await load();setCheckedIds(new Set(failed));}}/>
     </main>
-    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2"><DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem><DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2">{scope!=='links'&&<DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem>}{scope!=='files'&&<DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem>}{scope!=='files'&&scope!=='links'&&<DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>}
     {profileOpen&&<ProfileDialog name={user.displayName} csrf={csrf} onClose={()=>setProfileOpen(false)} onSaved={displayName=>{setUser({...user,displayName});void load()}}/>}
     <UploadQueue csrf={csrf} parent={parent} destination={folder?.title||'檔案庫最上層'} disabled={busy} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={load}/>
     <CreateDialog key={createKind} kind={createKind} setKind={setCreateKind} csrf={csrf} parent={parent} onDone={refresh}/>
