@@ -1,4 +1,5 @@
 import { zipStream, type ZipEntry } from '@/lib/zip';
+import { accessSettings } from '@/lib/access-settings';
 import { env } from 'cloudflare:workers';
 import { authPost } from '@/lib/local-auth';
 import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, sha256, snapshot, token, type Resource } from '@/lib/cloud';
@@ -92,6 +93,8 @@ export async function POST(request:Request,context:Context) {
 async function createResource(request:Request) {
   const auth=await requireUser(request),form=await request.formData(); requireCsrf(request,auth.csrf,textValue(form.get('csrf')));
   const kind=textValue(form.get('kind')),parentId=textValue(form.get('parentId')) || null;
+  let settings;
+  if(form.has('access')){let value;try{value=JSON.parse(textValue(form.get('access')));}catch{throw httpError(400,'存取權設定格式錯誤。');}settings=await accessSettings(value,auth.user.id);}
   if(!['file','link','folder'].includes(kind)) throw httpError(400,'未知的項目類型。');
   if(parentId) { const parentAccess=await resourceAccess(request,parentId,'',false,auth); if(parentAccess.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(parentAccess.permission); }
   const id=crypto.randomUUID(),created=now(); let storageKey:string|null=null,originalName:string|null=null,mimeType:string|null=null,sizeBytes:number|null=null,url:string|null=null;
@@ -103,11 +106,11 @@ async function createResource(request:Request) {
     await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType},customMetadata:{originalName}});
   }
   const resource:Resource={id,kind:kind as Resource['kind'],title:title(form.get('title') || (kind==='file'?originalName:'')),description:description(form.get('description')),
-    url,storage_key:storageKey,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,owner_id:auth.user.id,parent_id:parentId,access_level:'private',revision:1,trashed_at:null,created_at:created,updated_at:created};
-  await run(`INSERT INTO resources(id,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,owner_id,parent_id,access_level,revision,trashed_at,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,resource.id,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,
-    resource.owner_id,resource.parent_id,resource.access_level,1,null,created,created);
-  await snapshot(resource,'created',auth.user.id); await audit(auth.user.id,`resource.${kind}_created`,id,{parentId}); return json({ok:true,id},201);
+    url,storage_key:storageKey,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,owner_id:auth.user.id,parent_id:parentId,access_level:settings?.level||'private',revision:1,trashed_at:null,created_at:created,updated_at:created};
+  await env.DB.batch([env.DB.prepare(`INSERT INTO resources(id,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,owner_id,parent_id,access_level,revision,trashed_at,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(resource.id,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,
+    resource.owner_id,resource.parent_id,resource.access_level,1,null,created,created),...(settings?.statements(id)||[])]);
+  await snapshot(resource,'created',auth.user.id); await audit(auth.user.id,`resource.${kind}_created`,id,{parentId}); return json({ok:true,id,url:settings?.raw?`${appOrigin(request)}/s/${settings.raw}`:undefined},201);
 }
 
 async function mutateResource(request:Request,id:string) {
@@ -117,6 +120,12 @@ async function mutateResource(request:Request,id:string) {
   else body=await request.json() as Record<string,unknown>;
   requireCsrf(request,auth.csrf,textValue(body.csrf)); const operation=textValue(body.operation) || 'edit';
   const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation),auth),resource=state.resource;
+  if(operation==='access-config'){
+    assertOwner(resource,auth.user.id);const settings=await accessSettings(body.access,auth.user.id);
+    await env.DB.batch([env.DB.prepare('UPDATE resources SET access_level=?,updated_at=? WHERE id=?').bind(settings.level,now(),id),...settings.statements(id)]);
+    await audit(auth.user.id,'share.access_configured',id,{level:settings.level});
+    return json({ok:true,url:settings.raw?`${appOrigin(request)}/s/${settings.raw}`:undefined});
+  }
   if(operation==='edit') {
     assertEditor(state.permission); const nextRevision=resource.revision+1; let storageKey=resource.storage_key,originalName=resource.original_name,mimeType=resource.mime_type,sizeBytes=resource.size_bytes;
     if(resource.kind==='file' && file?.size) { if(file.size>100*1024*1024) throw httpError(413,'免費雲端版本單一檔案最多 100 MB。'); storageKey=`files/${id}/${crypto.randomUUID()}`; originalName=file.name.slice(0,240); mimeType=file.type||'application/octet-stream'; sizeBytes=file.size; await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType},customMetadata:{originalName}}); }

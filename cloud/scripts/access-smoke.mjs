@@ -125,7 +125,29 @@ try {
   assert((await api('/api/resources/'+fileId+'?trash=1')).status===404,'永久刪除後仍能存取');
   console.log('Batch checks passed: sharing, share links, move, permission denial, CSRF, partial failure, ZIP, ancestor deduplication, trash, restore and permanent deletion.');
 
-  console.log('Access smoke tests passed: 24 checks across owner, editor, viewer, outsider, default upload names, name sharing, notification fallback, link sharing, R2 upload/download, versions, CSRF, trash and restore.');
+  const uploadAccess={level:'selected',members:[{recipient:'editor@tschool.tp.edu.tw',role:'editor'},{recipient:'檢視者',role:'viewer'}],linkRole:'viewer'};
+  const formWithAccess=(access)=>{const f=new FormData();f.set('csrf',csrf);f.set('kind','file');f.set('file',new File(['access test'],'access.txt',{type:'text/plain'}));f.set('access',JSON.stringify(access));return f;};
+  const withAccess=await api('/api/resources',{method:'POST',body:formWithAccess(uploadAccess)});assert(withAccess.status===201&&withAccess.data.url,'上傳時權限或共享連結未建立');
+  const accessId=withAccess.data.id;
+  assert((await api('/api/resources/'+accessId,{as:'editor'})).data.resource.permission==='editor','上傳指定編輯權未生效');
+  assert((await api('/api/resources/'+accessId,{as:'viewer'})).data.resource.permission==='viewer','上傳指定檢視權未生效');
+  assert((await api('/api/resources/'+accessId,{as:'outsider'})).status===404,'未共享成員可讀取新檔案');
+  const rawLink=withAccess.data.url.split('/').pop();assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).data.resource.permission==='viewer','上傳連結權限未生效');
+  assert((await fetch(origin+'/api/resources/'+accessId+'?share='+rawLink)).status===401,'共享連結未要求登入');
+  const configure=(access,as='owner',csrfValue=csrf)=>api('/api/resources/'+accessId,{as,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'access-config',csrf:csrfValue,access})});
+  const privateConfig={level:'private',members:[],linkRole:''};
+  assert((await configure(privateConfig,'editor')).status===403,'非擁有者可管理權限');
+  assert((await configure(privateConfig,'owner','wrong')).status===403,'權限設定未檢查 CSRF');
+  assert((await configure({...uploadAccess,members:[{recipient:'nobody@example.com',role:'viewer'}]})).status===400,'接受無效成員');
+  assert((await api('/api/resources/'+accessId,{as:'editor'})).data.resource.permission==='editor','無效設定破壞既有權限');
+  assert((await configure(privateConfig)).status===200,'已完成上傳無法改為私人');
+  assert((await api('/api/resources/'+accessId,{as:'viewer'})).status===404,'私人設定未移除指定成員');
+  assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).status===404,'私人設定未撤銷共享連結');
+  const malformed=await api('/api/resources',{method:'POST',body:formWithAccess({...uploadAccess,members:[{recipient:'nobody@example.com',role:'viewer'}]})});assert(malformed.status===400,'上傳接受無效共享成員');
+  const allConfig={level:'members',members:[],linkRole:''};assert((await configure(allConfig)).status===200,'無法設為所有成員');
+  assert((await api('/api/resources/'+accessId,{as:'outsider'})).data.resource.permission==='viewer','所有成員權限未生效');
+  console.log('Upload access checks passed: atomic initial grants, viewer/editor, links, login, owner-only changes, CSRF, invalid-member rollback and revocation.');
+  console.log('Existing access, multi-upload, file/link areas and batch checks passed.');
 } catch(error) {
   console.error(logs);
   throw error;
