@@ -6,6 +6,7 @@ let records, delay = 1800, failNext = false, requests = [];
 function reset() {
   records = [{id:'fixture',kind:'link',title:'可重設的測試項目',description:'僅本機測試資料',url:'https://example.com',owner_id:'test',owner_name:'測試成員',permission:'owner',access_level:'private',revision:1,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),trashed_at:null}];
   records.push({...records[0],id:'locked-link',title:'受限連結測試',description:'所有人看得到的說明',owner_id:'other',owner_name:'其他成員',permission:'',url:undefined});
+  records.push({...records[0],id:'folder-events',kind:'folder',title:'活動資料夾',description:'測試目的地',url:null,parent_id:null});
   requests = []; failNext = false;
 }
 reset();
