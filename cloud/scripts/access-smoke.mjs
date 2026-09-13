@@ -54,7 +54,7 @@ try {
 
   const editorList=await api('/api/resources?scope=accessible',{as:'editor'});
   assert(editorList.data.items.some(item=>item.id==='folder-shared'&&item.permission==='editor'),'editor 未取得共享資料夾編輯權限');
-  assert(!editorList.data.items.some(item=>item.id==='private-item'),'editor 看見私人資料夾');
+  assert(editorList.data.items.some(item=>item.id==='private-item'&&!item.permission),'editor 無法看見受限制的基本資料');
   const editorChild=await api('/api/resources?scope=accessible&parent=folder-shared',{as:'editor'});
   assert(editorChild.data.items.some(item=>item.id==='child-link'&&item.permission==='editor'),'子項目未繼承資料夾編輯權限');
 
@@ -62,7 +62,7 @@ try {
   assert(viewerList.data.items.some(item=>item.id==='viewer-item'&&item.permission==='viewer'),'viewer 未取得指定檢視權限');
   assert(viewerList.data.items.some(item=>item.id==='members-item'&&item.permission==='viewer'),'viewer 未取得全體成員檢視權限');
   const outsiderList=await api('/api/resources?scope=accessible',{as:'outsider'});
-  assert(outsiderList.data.items.length===1&&outsiderList.data.items[0].id==='members-item','一般成員看見不應存取的項目');
+  assert(outsiderList.data.items.length===5,'一般成員看見不應存取的項目');
 
   const editOk=await api('/api/resources/child-link',{as:'editor',method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'edit',csrf,title:'編輯者已修改',description:'通過',url:'https://example.com/edited'})});
   assert(editOk.status===200,'editor 無法編輯共享資料夾內的項目');
@@ -74,7 +74,7 @@ try {
   const unauthLink=await fetch(`${origin}/api/resources/viewer-item?share=edit-link-token`);
   assert(unauthLink.status===401,'未登入者可使用共享連結');
   const authLink=await api('/api/resources/viewer-item?share=edit-link-token',{as:'outsider'});
-  assert(authLink.status===200&&authLink.data.resource.permission==='editor','已登入成員未取得連結編輯權限');
+  assert(authLink.status===403,'舊連結仍授予編輯權限');
   const sharedByName=await api('/api/resources/private-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'member-add',csrf,recipient:'一般成員',role:'viewer'})});
   assert(sharedByName.status===200&&sharedByName.data.notificationSent===false&&Boolean(sharedByName.data.warning),'依本名共享或未設定寄信服務的回應不正確');
 
@@ -89,8 +89,8 @@ try {
   const fileForm=new FormData(); fileForm.set('kind','file'); fileForm.set('csrf',csrf); fileForm.set('parentId','folder-shared'); fileForm.set('description','R2 smoke'); fileForm.set('file',new File(['version one'],'sample.txt',{type:'text/plain'}));
   const created=await api('/api/resources',{method:'POST',body:fileForm}); assert(created.status===201,'檔案上傳失敗');
   const fileId=created.data.id;
-  const filesOnly=await api('/api/resources?scope=files',{as:'editor'});assert(filesOnly.data.items.length===1&&filesOnly.data.items[0].id===fileId&&filesOnly.data.items.every(r=>r.kind==='file'),'檔案專區未跨資料夾篩選或洩漏未授權檔案');
-  const linksOnly=await api('/api/resources?scope=links',{as:'editor'});assert(linksOnly.data.items.length===1&&linksOnly.data.items[0].id==='child-link','連結專區未顯示繼承權限的子項目');
+  const filesOnly=await api('/api/resources?scope=files',{as:'editor'});assert(filesOnly.data.items.length===3&&filesOnly.data.items.some(r=>r.id===fileId)&&filesOnly.data.items.every(r=>r.kind==='file'),'檔案專區未跨資料夾篩選或洩漏未授權檔案');
+  const linksOnly=await api('/api/resources?scope=links',{as:'editor'});assert(linksOnly.data.items.length===2&&linksOnly.data.items.some(r=>r.id==='child-link'),'連結專區未顯示繼承權限的子項目');
   const searched=await api('/api/resources?scope=links&q='+encodeURIComponent('編輯者已修改'),{as:'editor'});assert(searched.data.items.length===1,'連結專區搜尋失敗');
   assert((await api('/api/resources?scope=files&q=nonexistent-query',{as:'owner'})).data.items.length===0,'專區搜尋未篩選');
   assert((await fetch(origin+'/api/resources?scope=files')).status===401,'未登入可使用檔案專區');
@@ -131,22 +131,49 @@ try {
   const accessId=withAccess.data.id;
   assert((await api('/api/resources/'+accessId,{as:'editor'})).data.resource.permission==='editor','上傳指定編輯權未生效');
   assert((await api('/api/resources/'+accessId,{as:'viewer'})).data.resource.permission==='viewer','上傳指定檢視權未生效');
-  assert((await api('/api/resources/'+accessId,{as:'outsider'})).status===404,'未共享成員可讀取新檔案');
-  const rawLink=withAccess.data.url.split('/').pop();assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).data.resource.permission==='viewer','上傳連結權限未生效');
+  assert((await api('/api/resources/'+accessId,{as:'outsider'})).status===403,'未共享成員可讀取新檔案');
+  const rawLink=withAccess.data.url.split('/').pop();assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).status===403,'固定連結不得授予權限');
   assert((await fetch(origin+'/api/resources/'+accessId+'?share='+rawLink)).status===401,'共享連結未要求登入');
   const configure=(access,as='owner',csrfValue=csrf)=>api('/api/resources/'+accessId,{as,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'access-config',csrf:csrfValue,access})});
   const privateConfig={level:'private',members:[],linkRole:''};
-  assert((await configure(privateConfig,'editor')).status===403,'非擁有者可管理權限');
+  assert((await configure(privateConfig,'viewer')).status===403,'檢視者可管理權限');
   assert((await configure(privateConfig,'owner','wrong')).status===403,'權限設定未檢查 CSRF');
   assert((await configure({...uploadAccess,members:[{recipient:'nobody@example.com',role:'viewer'}]})).status===400,'接受無效成員');
   assert((await api('/api/resources/'+accessId,{as:'editor'})).data.resource.permission==='editor','無效設定破壞既有權限');
   assert((await configure(privateConfig)).status===200,'已完成上傳無法改為私人');
-  assert((await api('/api/resources/'+accessId,{as:'viewer'})).status===404,'私人設定未移除指定成員');
-  assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).status===404,'私人設定未撤銷共享連結');
+  assert((await api('/api/resources/'+accessId,{as:'viewer'})).status===403,'私人設定未移除指定成員');
+  assert((await api('/api/resources/'+accessId+'?share='+rawLink,{as:'outsider'})).status===403,'私人設定未撤銷共享連結');
   const malformed=await api('/api/resources',{method:'POST',body:formWithAccess({...uploadAccess,members:[{recipient:'nobody@example.com',role:'viewer'}]})});assert(malformed.status===400,'上傳接受無效共享成員');
   const allConfig={level:'members',members:[],linkRole:''};assert((await configure(allConfig)).status===200,'無法設為所有成員');
   assert((await api('/api/resources/'+accessId,{as:'outsider'})).data.resource.permission==='viewer','所有成員權限未生效');
-  console.log('Upload access checks passed: atomic initial grants, viewer/editor, links, login, owner-only changes, CSRF, invalid-member rollback and revocation.');
+  console.log('Upload access checks passed: atomic initial grants, viewer/editor, links, login, editor access management, CSRF, invalid-member rollback and revocation.');
+  const perform=(id,operation,data={},as='owner')=>api('/api/resources/'+id,{as,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation,csrf,...data})});
+  const fixed=withAccess.data.url;
+  const fixedPage=await fetch(fixed,{redirect:'manual'});assert([302,303,307,308].includes(fixedPage.status)&&fixedPage.headers.get('location')?.includes('item='+accessId),'固定網址未指向指定項目');
+  const names=await api('/api/users?q='+encodeURIComponent('檢視者'));assert(names.data.users.some(u=>u.email==='viewer@tschool.tp.edu.tw'),'顯示名稱搜尋失敗');
+  const emails=await api('/api/users?q=viewer');assert(emails.data.users.some(u=>u.email==='viewer@tschool.tp.edu.tw'),'信箱搜尋失敗');
+  assert((await configure({...uploadAccess,level:'members'})).data.url===fixed,'固定網址隨權限設定改變');
+  assert((await api('/api/resources/'+accessId,{as:'editor'})).data.resource.permission==='editor','所有成員模式遺失指定編輯權');
+  assert((await configure({...uploadAccess,level:'private'},'editor')).status===200,'編輯者無法管理存取權');
+  assert((await api('/api/resources/'+accessId,{as:'owner'})).data.resource.permission==='owner','擁有者失去完整權限');
+  assert((await perform(accessId,'member-add',{recipient:'owner@tschool.tp.edu.tw',role:'viewer'},'editor')).status===400,'可降低擁有者權限');
+  const lockedList=await api('/api/resources?scope=files&q=access',{as:'outsider'});
+  const locked=lockedList.data.items.find(r=>r.id===accessId);
+  assert(locked&&!locked.permission&&locked.title&&locked.owner_name&&locked.created_at&&'description' in locked&&!locked.storage_key&&!locked.url,'搜尋未顯示受限基本資料或洩漏內容');
+  const lockedLinks=await api('/api/resources?scope=links',{as:'outsider'});assert(lockedLinks.data.items.filter(r=>!r.permission).every(r=>!r.url),'清單洩漏受限網址');
+  assert((await api('/api/resources?parent=folder-shared',{as:'outsider'})).status===403,'無權限可進入資料夾');
+  assert((await fetch(origin+'/api/resources/'+accessId+'/download',{headers:{Cookie:cookie('outsider')}})).status===403,'無權限可下載');
+  assert((await perform(accessId,'move',{parentId:''},'viewer')).status===403,'viewer 可移動');
+  assert((await perform(accessId,'move',{parentId:''},'editor')).status===200,'editor 不可移動');
+  assert((await perform(accessId,'trash',{},'editor')).status===200,'editor 不可刪除');
+  assert((await api('/api/resources?scope=trash',{as:'editor'})).data.items.some(r=>r.id===accessId),'editor 垃圾桶看不到可還原項目');
+  assert((await perform(accessId,'restore',{},'editor')).status===200,'editor 不可還原');
+  const replacementByEditor=new FormData();replacementByEditor.set('operation','edit');replacementByEditor.set('csrf',csrf);replacementByEditor.set('title','editor replacement');replacementByEditor.set('file',new File(['edited bytes'],'edited.txt'));
+  assert((await api('/api/resources/'+accessId,{as:'editor',method:'POST',body:replacementByEditor})).status===200,'editor 無法替換檔案');
+  assert((await perform(accessId,'trash',{},'editor')).status===200,'editor 刪除替換版本失敗');
+  assert((await perform(accessId,'delete',{},'editor')).status===200,'editor 無法永久刪除');
+  assert((await api('/api/resources/'+accessId)).status===404,'永久刪除後仍存在');
+  console.log('New sharing checks passed: metadata visibility, locked search, URL redaction, folder gate, stable links, no link grants, editor management/move/trash/restore/replacement/delete and owner invariance.');
   console.log('Existing access, multi-upload, file/link areas and batch checks passed.');
 } catch(error) {
   console.error(logs);

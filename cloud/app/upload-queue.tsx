@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 type Entry={id:string;file:File;title:string;description:string;parent:string;destination:string;status:'ready'|'uploading'|'done'|'failed'|'unknown';error:string;access:UploadAccess;resourceId?:string;shareUrl?:string};
 const labels={ready:'待確認',uploading:'上傳中…',done:'上傳完成',failed:'上傳失敗',unknown:'結果待確認'};
 
-export function UploadQueue({csrf,parent,destination,disabled,setBusy,onDone}:{csrf:string;parent:string;destination:string;disabled:boolean;setBusy:(value:boolean)=>void;onDone:()=>Promise<void>}){
+export function UploadQueue({csrf,parent,destination,disabled,setBusy,onDone,owner}:{owner:{name:string;email:string};csrf:string;parent:string;destination:string;disabled:boolean;setBusy:(value:boolean)=>void;onDone:()=>Promise<void>}){
   const [entries,setEntries]=useState<Entry[]>([]),[editing,setEditing]=useState(''),[collapsed,setCollapsed]=useState(false),[pending,setPending]=useState(false);
   const lock=useRef(false),picker=useRef<HTMLInputElement>(null);
   const [accessTarget,setAccessTarget]=useState(''),[accessInitial,setAccessInitial]=useState<UploadAccess>(privateAccess),[accessError,setAccessError]=useState('');
@@ -22,7 +22,7 @@ export function UploadQueue({csrf,parent,destination,disabled,setBusy,onDone}:{c
     const entry=entries.find(e=>e.id===id);setAccessInitial(entry?.access||privateAccess());
     if(entry?.resourceId){lock.current=true;setPending(true);setBusy(true);try{
       const response=await fetch(`/api/resources/${entry.resourceId}`,{cache:'no-store',signal:AbortSignal.timeout(30000)});const data=await response.json() as {error?:string;resource:{access_level:UploadAccess['level']};members:Array<{email:string;role:'viewer'|'editor'}>;link:{role:'viewer'|'editor'}|null};
-      if(!response.ok)throw new Error(data.error||'無法讀取存取權');setAccessInitial({level:data.resource.access_level,members:data.members.map(m=>({recipient:m.email,role:m.role})),linkRole:data.link?.role||''});
+      if(!response.ok)throw new Error(data.error||'無法讀取存取權');setAccessInitial({level:data.resource.access_level,members:data.members.map(m=>({recipient:m.email,role:m.role})),linkRole:''});
     }catch(error){update(id,{error:(error as Error).message});return;}finally{lock.current=false;setPending(false);setBusy(false);}}
     setAccessTarget(id);
   };
@@ -63,14 +63,14 @@ export function UploadQueue({csrf,parent,destination,disabled,setBusy,onDone}:{c
       <header><strong><Upload size={18}/>上傳確認（{entries.length} 個檔案）</strong><div className="upload-header-actions"><Button size="icon" variant="ghost" aria-label={collapsed?'展開上傳清單':'收合上傳清單'} onClick={()=>setCollapsed(value=>!value)}>{collapsed?<ChevronUp/>:<ChevronDown/>}</Button><Button variant="ghost" size="icon" disabled={disabled} aria-label="清空上傳清單" title="只清空清單，不會刪除已上傳的檔案" onClick={()=>{setEntries([]);setEditing('');}}><X/></Button></div></header>
       <output className="upload-summary">已完成 {entries.filter(entry=>entry.status==='done').length} / {entries.length} 個檔案{pending?' · 正在上傳，請保持頁面開啟':''}</output>
       {!collapsed&&<>
-        <p className="upload-hint">點選檔案可更改名稱、填寫說明或從待上傳清單移除。</p>
+        <p className="upload-hint">點選檔案可更改名稱、填寫說明或從待上傳清單移除，並管理存取權。</p>
         <div className="upload-entries">{entries.map(entry=><button type="button" className={editing===entry.id?'upload-entry active':'upload-entry'} key={entry.id} disabled={pending} onClick={()=>setEditing(editing===entry.id?'':entry.id)}><span><strong>{entry.title.trim()||entry.file.name}</strong><small>目的地：{entry.destination}</small></span><small>{labels[entry.status]}</small></button>)}</div>
         {active&&<div className="upload-editor"><p>原始檔名：{active.file.name}</p>{active.error&&<div className="notice" role="alert">{active.error}</div>}{editable?<>
           <label htmlFor="queued-title">檔案名稱（留白使用原始檔名）</label><Input id="queued-title" maxLength={180} value={active.title} disabled={pending} onChange={event=>update(active.id,{title:event.target.value})}/>
           <label htmlFor="queued-description">說明</label><Textarea id="queued-description" maxLength={4000} value={active.description} disabled={pending} onChange={event=>update(active.id,{description:event.target.value})}/>
           <Button variant="ghost" className="danger" disabled={pending} onClick={()=>{setEntries(current=>current.filter(entry=>entry.id!==active.id));setEditing('');}}><Trash2/>移除待上傳檔案</Button>
         </>:<p>{active.status==='done'?'檔案已上傳，可從檔案清單編輯。':labels[active.status]}</p>}
-          <p>直接存取權：{active.access.level==='members'?'所有已登入成員':active.access.level==='selected'?`指定成員（${active.access.members.length} 位）`:'僅自己'}{active.access.linkRole?' · 已啟用連結共享':''}</p>
+          <p>直接存取權：{active.access.level==='members'?'所有已登入成員':`限制（指定 ${active.access.members.length} 位成員）`}</p>
           {active.parent&&<p>此檔案仍會繼承所在資料夾的存取權。</p>}
           <Button variant="outline" disabled={disabled||active.status==='unknown'} onClick={()=>void openAccess(active.id)}><Share2/>管理存取權</Button>
           {active.shareUrl&&<><label htmlFor="queued-share-link">共享連結</label><Input id="queued-share-link" readOnly value={active.shareUrl} onFocus={event=>event.currentTarget.select()}/></>}
@@ -79,6 +79,6 @@ export function UploadQueue({csrf,parent,destination,disabled,setBusy,onDone}:{c
         <footer><Button variant="outline" disabled={disabled} onClick={()=>picker.current?.click()}>加入檔案</Button><Button variant="outline" disabled={disabled||!entries.some(e=>e.status!=='unknown')} onClick={()=>void openAccess('all')}>管理存取權</Button><Button className="upload-confirm" disabled={disabled||!ready.length} onClick={()=>void upload()}>{pending?'處理中…':`確認上傳（${ready.length}）`}</Button></footer>
       </>}
     </section>}
-    {accessTarget&&<UploadAccessDialog key={accessTarget} initial={accessInitial} batch={accessTarget==='all'} title={entries.find(e=>e.id===accessTarget)?.title||''} pending={pending} error={accessError} onClose={()=>setAccessTarget('')} onSave={saveAccess}/>}
+    {accessTarget&&<UploadAccessDialog key={accessTarget} initial={accessInitial} owner={owner} urls={entries.filter(e=>accessTarget==='all'||e.id===accessTarget).flatMap(e=>e.shareUrl?[e.shareUrl]:[])} batch={accessTarget==='all'} title={entries.find(e=>e.id===accessTarget)?.title||''} pending={pending} error={accessError} onClose={()=>setAccessTarget('')} onSave={saveAccess}/>}
   </>;
 }

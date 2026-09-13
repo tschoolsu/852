@@ -1,8 +1,8 @@
 import { zipStream, type ZipEntry } from '@/lib/zip';
 import { accessSettings } from '@/lib/access-settings';
-import { env } from 'cloudflare:workers';
 import { authPost } from '@/lib/local-auth';
-import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, sha256, snapshot, token, type Resource } from '@/lib/cloud';
+import { env } from 'cloudflare:workers';
+import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
 const textValue=(value:unknown)=>typeof value==='string'?value:'';
@@ -13,11 +13,10 @@ const role=(value:unknown)=>value==='editor'?'editor':'viewer';
 async function resourceAccess(request:Request,id:string,share='',allowTrashed=false,auth?:Awaited<ReturnType<typeof requireUser>>) {
   const {user}=auth || await requireUser(request),access=await loadAccess(user,share);
   const resource=access.map.get(id); if(!resource || (!allowTrashed && access.hiddenByTrash(resource))) throw httpError(404,'找不到這個項目。');
-  const permission=access.permission(resource); if(!permission) throw httpError(404,'找不到這個項目。');
+  const permission=access.permission(resource); if(!permission) throw httpError(403,'你目前沒有此項目的存取權');
   return {user,resource,permission,access};
 }
 
-function assertOwner(resource:Resource,userId:string){if(resource.owner_id!==userId) throw httpError(403,'只有擁有者可以執行這項操作。');}
 function assertEditor(permission:string){if(!['owner','editor'].includes(permission)) throw httpError(403,'你沒有編輯權限。');}
 
 async function parseBody(request:Request) {
@@ -38,20 +37,20 @@ export async function GET(request:Request,context:Context) {
       if(q.length<2) return json({users:[]}); const like=`%${q.replace(/[\\%_]/g,'\\$&')}%`;
       const users=await all<{id:string;email:string;display_name:string}>(`SELECT id,email,display_name FROM users WHERE status='active' AND id<>?
         AND (email LIKE ? ESCAPE '\\' COLLATE NOCASE OR display_name LIKE ? ESCAPE '\\' COLLATE NOCASE) ORDER BY display_name LIMIT 10`,user.id,like,like);
-      return json({users});
+      return json({users:users.filter(u=>validSchoolEmail(u.email))});
     }
     if(path[0]==='resources' && path.length===1) {
       const {user}=await requireUser(request),scope=url.searchParams.get('scope') || 'accessible',parent=url.searchParams.get('parent') || '',share=url.searchParams.get('share') || '';
       const q=(url.searchParams.get('q') || '').trim().toLowerCase(),access=await loadAccess(user,share);
+      if(parent){const folder=access.map.get(parent);if(!folder||folder.kind!=='folder'||access.hiddenByTrash(folder))throw httpError(404,'找不到這個資料夾。');if(!access.permission(folder))throw httpError(403,'你目前沒有此項目的存取權');}
       const owners=new Map((await all<{id:string;display_name:string;email:string}>('SELECT id,display_name,email FROM users')).map(u=>[u.id,u]));
       const items=access.resources.filter(r=>{
-        if(scope==='trash') return r.owner_id===user.id && Boolean(r.trashed_at);
-        if(access.hiddenByTrash(r) || !access.permission(r)) return false;
+        if(scope==='trash') return ['owner','editor'].includes(access.permission(r)) && Boolean(r.trashed_at);
+        if(access.hiddenByTrash(r)) return false;
         if(scope==='mine' && r.owner_id!==user.id) return false;
         if(scope==='folders') return r.kind==='folder' && ['owner','editor'].includes(access.permission(r));
         if(scope==='files'||scope==='links') return r.kind===(scope==='files'?'file':'link')&&(!q||r.title.toLowerCase().includes(q)||r.description.toLowerCase().includes(q));
-        const visibleParent=r.parent_id && access.map.get(r.parent_id) && access.permission(access.map.get(r.parent_id)!) && !access.hiddenByTrash(access.map.get(r.parent_id)!) ? r.parent_id : '';
-        if(!q && visibleParent!==parent) return false;
+        if(!q && parent && r.parent_id!==parent) return false;
         return !q || r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q);
       }).sort((a,b)=>a.kind===b.kind?b.updated_at.localeCompare(a.updated_at):a.kind==='folder'?-1:b.kind==='folder'?1:0)
         .map(r=>publicResource(r,access.permission(r),owners.get(r.owner_id)));
@@ -61,14 +60,13 @@ export async function GET(request:Request,context:Context) {
     if(path[0]==='resources' && path[1]) {
       const id=path[1],share=url.searchParams.get('share') || '';
       if(path[2]==='download') return await download(request,id,share,url.searchParams.get('revision'));
-      const {user,resource,permission}=await resourceAccess(request,id,share,url.searchParams.get('trash')==='1');
-      const [owner,versions,members,link]=await Promise.all([
+      const {resource,permission}=await resourceAccess(request,id,share,url.searchParams.get('trash')==='1');
+      const [owner,versions,members]=await Promise.all([
         first<{display_name:string;email:string}>('SELECT display_name,email FROM users WHERE id=?',resource.owner_id),
         ['owner','editor'].includes(permission)?all('SELECT revision,event,actor_id,original_name,size_bytes,created_at FROM resource_versions WHERE resource_id=? ORDER BY revision DESC',id):[],
-        resource.owner_id===user.id?all(`SELECT u.id,u.email,u.display_name,m.role FROM resource_members m JOIN users u ON u.id=m.user_id WHERE m.resource_id=? ORDER BY u.display_name`,id):[],
-        resource.owner_id===user.id?first<{role:string}>('SELECT role FROM share_links WHERE resource_id=?',id):null,
+        ['owner','editor'].includes(permission)?all(`SELECT u.id,u.email,u.display_name,m.role FROM resource_members m JOIN users u ON u.id=m.user_id WHERE m.resource_id=? ORDER BY u.display_name`,id):[],
       ]);
-      return json({resource:publicResource(resource,permission,owner||undefined),versions,members,link});
+      return json({resource:publicResource(resource,permission,owner||undefined),versions,members,shareUrl:`${appOrigin(request)}/s/${id}`});
     }
     throw httpError(404,'找不到頁面。');
   } catch(error) { return handle(error); }
@@ -110,7 +108,7 @@ async function createResource(request:Request) {
   await env.DB.batch([env.DB.prepare(`INSERT INTO resources(id,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,owner_id,parent_id,access_level,revision,trashed_at,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(resource.id,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,
     resource.owner_id,resource.parent_id,resource.access_level,1,null,created,created),...(settings?.statements(id)||[])]);
-  await snapshot(resource,'created',auth.user.id); await audit(auth.user.id,`resource.${kind}_created`,id,{parentId}); return json({ok:true,id,url:settings?.raw?`${appOrigin(request)}/s/${settings.raw}`:undefined},201);
+  await snapshot(resource,'created',auth.user.id); await audit(auth.user.id,`resource.${kind}_created`,id,{parentId}); return json({ok:true,id,url:`${appOrigin(request)}/s/${id}`},201);
 }
 
 async function mutateResource(request:Request,id:string) {
@@ -121,10 +119,10 @@ async function mutateResource(request:Request,id:string) {
   requireCsrf(request,auth.csrf,textValue(body.csrf)); const operation=textValue(body.operation) || 'edit';
   const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation),auth),resource=state.resource;
   if(operation==='access-config'){
-    assertOwner(resource,auth.user.id);const settings=await accessSettings(body.access,auth.user.id);
+    assertEditor(state.permission);const settings=await accessSettings(body.access,resource.owner_id);
     await env.DB.batch([env.DB.prepare('UPDATE resources SET access_level=?,updated_at=? WHERE id=?').bind(settings.level,now(),id),...settings.statements(id)]);
     await audit(auth.user.id,'share.access_configured',id,{level:settings.level});
-    return json({ok:true,url:settings.raw?`${appOrigin(request)}/s/${settings.raw}`:undefined});
+    return json({ok:true,url:`${appOrigin(request)}/s/${id}`});
   }
   if(operation==='edit') {
     assertEditor(state.permission); const nextRevision=resource.revision+1; let storageKey=resource.storage_key,originalName=resource.original_name,mimeType=resource.mime_type,sizeBytes=resource.size_bytes;
@@ -135,39 +133,39 @@ async function mutateResource(request:Request,id:string) {
     await snapshot(next,'updated',auth.user.id,nextRevision); await audit(auth.user.id,'resource.updated',id,{revision:nextRevision}); return json({ok:true});
   }
   if(operation==='move') {
-    assertOwner(resource,auth.user.id); const parentId=textValue(body.parentId)||null; if(parentId===id) throw httpError(400,'資料夾不能移到自己裡面。');
+    assertEditor(state.permission); const parentId=textValue(body.parentId)||null; if(parentId===id) throw httpError(400,'資料夾不能移到自己裡面。');
     if(parentId) { const dest=await resourceAccess(request,parentId,'',false,auth); if(dest.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(dest.permission);
       let cursor:Resource|undefined=dest.resource; while(cursor){if(cursor.id===id) throw httpError(400,'資料夾不能移到自己的子資料夾。'); cursor=cursor.parent_id?dest.access.map.get(cursor.parent_id):undefined;} }
     const next={...resource,parent_id:parentId,revision:resource.revision+1,updated_at:now()}; await run('UPDATE resources SET parent_id=?,revision=?,updated_at=? WHERE id=?',parentId,next.revision,next.updated_at,id);
     await snapshot(next,'moved',auth.user.id,next.revision); await audit(auth.user.id,'resource.moved',id,{parentId}); return json({ok:true});
   }
   if(operation==='trash') {
-    assertOwner(resource,auth.user.id); const access=state.access; const subtree=new Set<string>([id]); let changed=true;
+    assertEditor(state.permission); const access=state.access; const subtree=new Set<string>([id]); let changed=true;
     while(changed){changed=false; for(const row of access.resources) if(row.parent_id&&subtree.has(row.parent_id)&&!subtree.has(row.id)){subtree.add(row.id);changed=true;}}
-    for(const row of access.resources) if(row.parent_id&&subtree.has(row.parent_id)&&row.owner_id!==auth.user.id) await run('UPDATE resources SET parent_id=NULL,updated_at=? WHERE id=?',now(),row.id);
+    for(const row of access.resources) if(row.parent_id&&subtree.has(row.parent_id)&&!['owner','editor'].includes(access.permission(row))) await run('UPDATE resources SET parent_id=NULL,updated_at=? WHERE id=?',now(),row.id);
     await run('UPDATE resources SET trashed_at=?,updated_at=? WHERE id=?',now(),now(),id); await audit(auth.user.id,'resource.trashed',id); return json({ok:true});
   }
-  if(operation==='restore') { assertOwner(resource,auth.user.id); if(!resource.trashed_at) throw httpError(409,'項目不在垃圾桶。'); await run('UPDATE resources SET trashed_at=NULL,updated_at=? WHERE id=?',now(),id); await audit(auth.user.id,'resource.restored',id); return json({ok:true}); }
+  if(operation==='restore') { assertEditor(state.permission); if(!resource.trashed_at) throw httpError(409,'項目不在垃圾桶。'); await run('UPDATE resources SET trashed_at=NULL,updated_at=? WHERE id=?',now(),id); await audit(auth.user.id,'resource.restored',id); return json({ok:true}); }
   if(operation==='delete') {
-    assertOwner(resource,auth.user.id); if(!resource.trashed_at) throw httpError(409,'請先將項目移到垃圾桶。'); const rows=state.access.resources,subtree=new Set<string>([id]); let changed=true;
-    while(changed){changed=false; for(const row of rows) if(row.parent_id&&subtree.has(row.parent_id)&&!subtree.has(row.id)){if(row.owner_id!==auth.user.id) throw httpError(409,'資料夾中仍有其他成員擁有的內容。');subtree.add(row.id);changed=true;}}
+    assertEditor(state.permission); if(!resource.trashed_at) throw httpError(409,'請先將項目移到垃圾桶。'); const rows=state.access.resources,subtree=new Set<string>([id]); let changed=true;
+    while(changed){changed=false; for(const row of rows) if(row.parent_id&&subtree.has(row.parent_id)&&!subtree.has(row.id)){if(!['owner','editor'].includes(state.access.permission(row))) throw httpError(403,'資料夾中仍有你無法管理的內容。');subtree.add(row.id);changed=true;}}
     const ids=[...subtree],keys=new Set<string>(); for(const rid of ids){for(const v of await all<{storage_key:string|null}>('SELECT storage_key FROM resource_versions WHERE resource_id=?',rid))if(v.storage_key)keys.add(v.storage_key); const current=rows.find(r=>r.id===rid);if(current?.storage_key)keys.add(current.storage_key);}
     for(const rid of ids){await run('DELETE FROM resource_members WHERE resource_id=?',rid);await run('DELETE FROM share_links WHERE resource_id=?',rid);await run('DELETE FROM resource_versions WHERE resource_id=?',rid);await run('DELETE FROM resources WHERE id=?',rid);} if(keys.size)await env.FILES.delete([...keys]);
     await audit(auth.user.id,'resource.deleted_permanently',id,{count:ids.length}); return json({ok:true});
   }
   if(operation==='member-add') {
-    assertOwner(resource,auth.user.id); const query=textValue(body.recipient).trim(); let users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND email=? COLLATE NOCASE",query);
-    if(!users.length)users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND display_name=? COLLATE NOCASE LIMIT 2",query); if(users.length!==1||users[0].id===auth.user.id)throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
+    assertEditor(state.permission); const query=textValue(body.recipient).trim(); let users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND email=? COLLATE NOCASE",query);
+    if(!users.length)users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND display_name=? COLLATE NOCASE LIMIT 2",query); if(users.length!==1||users[0].id===resource.owner_id||!validSchoolEmail(users[0].email))throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
     await run('INSERT INTO resource_members(resource_id,user_id,role) VALUES(?,?,?) ON CONFLICT(resource_id,user_id) DO UPDATE SET role=excluded.role',id,users[0].id,role(body.role));
-    await run("UPDATE resources SET access_level='selected',updated_at=? WHERE id=?",now(),id); await audit(auth.user.id,'share.member_updated',id,{recipient:users[0].email,role:role(body.role)});
+    await run("UPDATE resources SET updated_at=? WHERE id=?",now(),id); await audit(auth.user.id,'share.member_updated',id,{recipient:users[0].email,role:role(body.role)});
     const notification=await sendShareNotification(request,{recipient:users[0].email,recipientName:users[0].display_name,senderName:auth.user.display_name,resourceTitle:resource.title,permission:role(body.role)});
     await audit(auth.user.id,notification.sent?'share.notification_sent':'share.notification_skipped',id,{recipient:users[0].email,reason:notification.reason});
     return json({ok:true,notificationSent:notification.sent,warning:notification.sent?undefined:`共享已完成；通知信未寄出（${notification.reason}）。`});
   }
-  if(operation==='member-remove') { assertOwner(resource,auth.user.id); await run('DELETE FROM resource_members WHERE resource_id=? AND user_id=?',id,textValue(body.userId)); return json({ok:true}); }
-  if(operation==='access-level') { assertOwner(resource,auth.user.id); const level=body.level==='members'?'members':body.level==='selected'?'selected':'private'; await run('UPDATE resources SET access_level=?,updated_at=? WHERE id=?',level,now(),id); if(level==='private'){await run('DELETE FROM resource_members WHERE resource_id=?',id);await run('DELETE FROM share_links WHERE resource_id=?',id);} return json({ok:true}); }
-  if(operation==='link-generate') { assertOwner(resource,auth.user.id); const raw=token(); await run('INSERT INTO share_links(resource_id,token_hash,role,created_at) VALUES(?,?,?,?) ON CONFLICT(resource_id) DO UPDATE SET token_hash=excluded.token_hash,role=excluded.role,created_at=excluded.created_at',id,await sha256(raw),role(body.role),now()); return json({ok:true,url:`${appOrigin(request)}/s/${raw}`}); }
-  if(operation==='link-revoke') { assertOwner(resource,auth.user.id); await run('DELETE FROM share_links WHERE resource_id=?',id); return json({ok:true}); }
+  if(operation==='member-remove') { assertEditor(state.permission); if(textValue(body.userId)===resource.owner_id)throw httpError(403,'擁有者固定保有完整權限。'); await run('DELETE FROM resource_members WHERE resource_id=? AND user_id=?',id,textValue(body.userId)); return json({ok:true}); }
+  if(operation==='access-level') { assertEditor(state.permission); const level=body.level==='members'?'members':'private'; await run('UPDATE resources SET access_level=?,updated_at=? WHERE id=?',level,now(),id); return json({ok:true}); }
+  if(operation==='link-generate') { return json({ok:true,url:`${appOrigin(request)}/s/${id}`}); }
+  if(operation==='link-revoke') { assertEditor(state.permission); await run('DELETE FROM share_links WHERE resource_id=?',id); return json({ok:true}); }
   if(operation==='version-restore') {
     assertEditor(state.permission); const revision=Number(body.revision),v=await first<Resource & {revision:number}>('SELECT * FROM resource_versions WHERE resource_id=? AND revision=?',id,revision); if(!v)throw httpError(404,'找不到版本。');
     const next={...resource,title:v.title,description:v.description,url:v.url,storage_key:v.storage_key,original_name:v.original_name,mime_type:v.mime_type,size_bytes:v.size_bytes,parent_id:v.parent_id,revision:resource.revision+1,updated_at:now()};
@@ -194,7 +192,7 @@ async function selection(request:Request) {
   const ids=Array.isArray(body.ids)?[...new Set(body.ids.filter((id):id is string=>typeof id==='string'))]:[];
   if(!ids.length||ids.length>500)throw httpError(400,'每次請選取 1 至 500 個項目。');
   const operation=textValue(body.operation),share=textValue(body.share),access=await loadAccess(auth.user,share);
-  if(!['download','trash','restore','delete','move','member-add','link-generate','access-level','link-revoke'].includes(operation))throw httpError(400,'未知的批次操作。');
+  if(!['download','trash','restore','delete','move','member-add','link-generate','access-level','link-revoke','access-config'].includes(operation))throw httpError(400,'未知的批次操作。');
   // Normalize parent/child selections so a folder operation never flattens or repeats its children.
   const selected=new Set(ids);
   const roots=ids.filter(id=>{let r=access.map.get(id);const seen=new Set<string>([id]);while(r?.parent_id&&!seen.has(r.parent_id)){if(selected.has(r.parent_id)&&operation!=='restore')return false;seen.add(r.parent_id);r=access.map.get(r.parent_id);}return true;});

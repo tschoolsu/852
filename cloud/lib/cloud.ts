@@ -1,5 +1,5 @@
-import { env } from 'cloudflare:workers';
 import {mailConfigured,sendMail} from './mail';
+import { env } from 'cloudflare:workers';
 
 export type User = { id:string; email:string; display_name:string; role:string; status:string };
 export type Resource = {
@@ -86,23 +86,20 @@ export function safeUrl(value:string) {
   return url.toString();
 }
 
-export async function loadAccess(user:User,shareToken='') {
-  const [resourceRows,memberRows,shareRows]=await Promise.all([
+export async function loadAccess(user:User,_shareToken='') {
+  const [resourceRows,memberRows]=await Promise.all([
     all<Resource>('SELECT * FROM resources'),
     all<{resource_id:string;user_id:string;role:string}>('SELECT resource_id,user_id,role FROM resource_members WHERE user_id=?',user.id),
-    shareToken ? all<{resource_id:string;role:string}>('SELECT resource_id,role FROM share_links WHERE token_hash=?',await sha256(shareToken)) : Promise.resolve([]),
   ]);
   const map=new Map(resourceRows.map(r=>[r.id,r]));
   const memberships=new Map(memberRows.map(m=>[m.resource_id,m.role]));
-  const links=new Map(shareRows.map(m=>[m.resource_id,m.role]));
   const rank=(role:string)=>role==='owner'?3:role==='editor'?2:role==='viewer'?1:0;
   function permission(resource:Resource) {
     let best=resource.owner_id===user.id?'owner':''; let current:Resource|undefined=resource; const seen=new Set<string>();
     while(current && !seen.has(current.id)) {
       seen.add(current.id);
-      const member=memberships.get(current.id); const link=links.get(current.id);
+      const member=memberships.get(current.id);
       if(member && rank(member)>rank(best)) best=member;
-      if(link && rank(link)>rank(best)) best=link;
       if(current.access_level==='members' && rank('viewer')>rank(best)) best='viewer';
       current=current.parent_id?map.get(current.parent_id):undefined;
     }
@@ -117,7 +114,7 @@ export async function loadAccess(user:User,shareToken='') {
 }
 
 export function publicResource(resource:Resource,permission:string,owner?:{display_name:string;email:string}) {
-  return {...resource,permission,owner_name:owner?.display_name || '',owner_email:owner?.email || '',storage_key:undefined};
+  return {...resource,permission,owner_name:owner?.display_name || '',owner_email:owner?.email || '',storage_key:undefined,url:permission?resource.url:undefined};
 }
 
 export async function audit(actorId:string|null,action:string,targetId:string|null,details:unknown={}) {
