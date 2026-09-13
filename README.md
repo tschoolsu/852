@@ -234,8 +234,8 @@ T-Files 是學生會內部使用的檔案管理系統，用來集中保存學生
 | `test/` | Express 本機版測試 |
 | `scripts/` | 本機測試及開發工具 |
 | `SECURITY.md` | 系統資安政策及上線前檢查事項 |
-| `cloud/README.md` | 雲端版本的環境設定及測試說明 |
-| `docs/` | 預計存放部署及維護文件；目前尚未建立 |
+| [cloud/README.md](./cloud/README.md) | 雲端版本的環境設定及測試說明 |
+| [docs/部署與維護手冊.md](./docs/部署與維護手冊.md) | Debian、PostgreSQL、Nginx、PM2、Cloudflare 與 SMTP 的部署及維護說明 |
 
 正式網站使用 `cloud/` 版本。修改正式網站功能時，應以 `cloud/` 內的程式為主。
 

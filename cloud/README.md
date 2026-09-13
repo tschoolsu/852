@@ -769,4 +769,4 @@ npm audit --omit=dev
 - PostgreSQL
 - 主機本機檔案系統
 
-Debian 12、Nginx、PM2 及 PostgreSQL 的部署方式屬於另一套正式主機架構，應記錄於獨立的部署與維護手冊，不應直接套用本文件中的 Cloudflare 指令。
+Debian 12、Nginx、PM2 及 PostgreSQL 的部署方式屬於另一套正式主機架構，不應直接套用本文件中的 Cloudflare 指令。相關規劃與操作範本請參考 [正式部署與維護手冊](../docs/部署與維護手冊.md)。
