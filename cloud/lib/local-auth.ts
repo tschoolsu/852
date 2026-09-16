@@ -2,6 +2,7 @@ import { env } from './node-env';
 import { appOrigin,audit,cookie,first,httpError,isAdminEmail,json,now,requireCsrf,requireUser,run,sessionHash,sha256,token,validSchoolEmail } from './cloud';
 import { hashPassword,validPassword,verifyPassword } from './password';
 import { mailConfigured,sendMail } from './mail';
+import { readJsonBody } from './request-body';
 
 const genericMailMessage='若此信箱符合條件，將收到驗證或密碼設定信，請檢查收件匣與垃圾郵件。';
 function nameValue(value:unknown) {return typeof value==='string'?value.trim().slice(0,80):'';}
@@ -20,11 +21,11 @@ async function rateLimit(action:string,identity:string,limit:number,seconds:numb
 }
 
 export async function authPost(request:Request,action:string) {
-  const raw=await request.text();requireOrigin(request);if(raw.length>4096)throw httpError(413,'要求內容過長。');
-  let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{throw httpError(400,'要求格式錯誤。');}
-  if(!body||typeof body!=='object'||Array.isArray(body))throw httpError(400,'要求格式錯誤。');
-  const ip=request.headers.get('cf-connecting-ip') || 'local';
+  requireOrigin(request);
+  // Nginx overwrites X-Real-IP after accepting a request from a trusted Cloudflare peer.
+  const ip=request.headers.get('x-real-ip') || 'local';
   await rateLimit('auth-ip',ip,60,900);
+  const body=await readJsonBody(request,4096);
   await run('DELETE FROM auth_rate_limits WHERE expires_at<?',Date.now()-86400000);
   if(action==='profile') {
     const auth=await requireUser(request);requireCsrf(request,auth.csrf,typeof body.csrf==='string'?body.csrf:'');

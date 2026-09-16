@@ -3,6 +3,7 @@ import { accessSettings } from '@/lib/access-settings';
 import { authPost } from '@/lib/local-auth';
 import { adminGet, adminPost } from '@/lib/admin';
 import { env } from '@/lib/node-env';
+import { readJsonBody } from '@/lib/request-body';
 import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, isAdminEmail, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
@@ -19,6 +20,23 @@ async function resourceAccess(request:Request,id:string,share='',allowTrashed=fa
 }
 
 function assertEditor(permission:string){if(!['owner','editor'].includes(permission)) throw httpError(403,'你沒有編輯權限。');}
+
+function assertDestination(resource:Resource,parentId:string|null,access:Awaited<ReturnType<typeof loadAccess>>) {
+  if(!parentId)return;
+  const destination=access.map.get(parentId);
+  if(!destination||access.hiddenByTrash(destination))throw httpError(404,'找不到目的地資料夾。');
+  if(destination.kind!=='folder')throw httpError(400,'目的地不是資料夾。');
+  assertEditor(access.permission(destination));
+  const visited=new Set<string>();
+  let cursor:Resource|undefined=destination;
+  while(cursor){
+    if(cursor.id===resource.id)throw httpError(400,'資料夾不能移到自己的子資料夾。');
+    if(visited.has(cursor.id))throw httpError(409,'目的地資料夾結構異常。');
+    visited.add(cursor.id);
+    if(cursor.parent_id&&!access.map.has(cursor.parent_id))throw httpError(409,'目的地資料夾結構異常。');
+    cursor=cursor.parent_id?access.map.get(cursor.parent_id):undefined;
+  }
+}
 
 async function parseBody(request:Request) {
   const type=request.headers.get('content-type') || '';
@@ -137,9 +155,8 @@ async function mutateResource(request:Request,id:string) {
     await snapshot(next,'updated',auth.user.id,nextRevision); await audit(auth.user.id,'resource.updated',id,{revision:nextRevision}); return json({ok:true});
   }
   if(operation==='move') {
-    assertEditor(state.permission); const parentId=textValue(body.parentId)||null; if(parentId===id) throw httpError(400,'資料夾不能移到自己裡面。');
-    if(parentId) { const dest=await resourceAccess(request,parentId,'',false,auth); if(dest.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(dest.permission);
-      let cursor:Resource|undefined=dest.resource; while(cursor){if(cursor.id===id) throw httpError(400,'資料夾不能移到自己的子資料夾。'); cursor=cursor.parent_id?dest.access.map.get(cursor.parent_id):undefined;} }
+    assertEditor(state.permission); const parentId=textValue(body.parentId)||null;
+    assertDestination(resource,parentId,state.access);
     const next={...resource,parent_id:parentId,revision:resource.revision+1,updated_at:now()}; await run('UPDATE resources SET parent_id=?,revision=?,updated_at=? WHERE id=?',parentId,next.revision,next.updated_at,id);
     await snapshot(next,'moved',auth.user.id,next.revision); await audit(auth.user.id,'resource.moved',id,{parentId}); return json({ok:true});
   }
@@ -172,6 +189,7 @@ async function mutateResource(request:Request,id:string) {
   if(operation==='link-revoke') { assertEditor(state.permission); await run('DELETE FROM share_links WHERE resource_id=?',id); return json({ok:true}); }
   if(operation==='version-restore') {
     assertEditor(state.permission); const revision=Number(body.revision),v=await first<Resource & {revision:number}>('SELECT * FROM resource_versions WHERE resource_id=? AND revision=?',id,revision); if(!v)throw httpError(404,'找不到版本。');
+    assertDestination(resource,v.parent_id,state.access);
     const next={...resource,title:v.title,description:v.description,url:v.url,storage_key:v.storage_key,original_name:v.original_name,mime_type:v.mime_type,size_bytes:v.size_bytes,parent_id:v.parent_id,revision:resource.revision+1,updated_at:now()};
     await run('UPDATE resources SET title=?,description=?,url=?,storage_key=?,original_name=?,mime_type=?,size_bytes=?,parent_id=?,revision=?,updated_at=? WHERE id=?',next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,next.parent_id,next.revision,next.updated_at,id);
     await snapshot(next,'version_restored',auth.user.id,next.revision); await audit(auth.user.id,'resource.version_restored',id,{from:revision,to:next.revision}); return json({ok:true});
@@ -192,7 +210,7 @@ function handle(error:unknown) {
 }
 
 async function selection(request:Request) {
-  const body=await request.json() as Record<string,unknown>,auth=await requireUser(request);requireCsrf(request,auth.csrf,textValue(body.csrf));
+  const auth=await requireUser(request),body=await readJsonBody(request,64*1024);requireCsrf(request,auth.csrf,textValue(body.csrf));
   const ids=Array.isArray(body.ids)?[...new Set(body.ids.filter((id):id is string=>typeof id==='string'))]:[];
   if(!ids.length||ids.length>500)throw httpError(400,'每次請選取 1 至 500 個項目。');
   const operation=textValue(body.operation),share=textValue(body.share),access=await loadAccess(auth.user,share);
