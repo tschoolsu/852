@@ -101,6 +101,7 @@ export default function ClientApp(){
         {!loading&&!listError&&!items.length&&<div className="empty"><span>{scope==='trash'?'00':'+'}</span><h2>{query?'找不到符合的內容':scope==='trash'?'垃圾桶是空的':'這裡還沒有內容'}</h2><p>{scope==='trash'?'刪除的檔案、連結與資料夾會出現在這裡。':'使用右下角的加號新增第一個項目。'}</p></div>}
       </div>
       <BulkActions items={items.filter(item=>checkedIds.has(item.id))} trash={scope==='trash'} csrf={csrf} share={share} disabled={busy||loading||Boolean(listError)} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={async failed=>{await load();setCheckedIds(new Set(failed));}}/>
+      <footer className="workspace-footer">© 2026 TSchool 學生會數位部</footer>
     </main>
     {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2">{scope!=='links'&&<DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem>}{scope!=='files'&&<DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem>}{scope!=='files'&&scope!=='links'&&<DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>}
     {profileOpen&&<ProfileDialog name={user.displayName} csrf={csrf} onClose={()=>setProfileOpen(false)} onSaved={displayName=>{setUser({...user,displayName});void load()}}/>}
