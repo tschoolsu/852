@@ -130,6 +130,8 @@ button.file-row:hover { background: #f3faf4; }
   background: #e5f2fc;
   color: #254d65;
 }
+.kind-icon svg { align-self: start; margin-top: 6px; }
+.kind-icon small { bottom: 4px; line-height: 1; }
 .kind-icon.folder { background: var(--portal-lavender); color: #564981; }
 .kind-icon.link { background: var(--portal-mint); color: #236341; }
 .empty span { border: 1px solid var(--portal-outline); background: var(--portal-mint); color: var(--ink); }
