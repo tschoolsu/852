@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env } from './node-env';
 import { all, httpError, validSchoolEmail } from './cloud';
 
 export async function accessSettings(value:unknown,ownerId:string){
@@ -9,7 +9,7 @@ export async function accessSettings(value:unknown,ownerId:string){
   for(const member of data.members){
     if(typeof member?.recipient!=='string'||!['viewer','editor'].includes(member.role))throw httpError(400,'成員或權限無效。');
     const query=member.recipient.trim();
-    const users=await all<{id:string;email:string}>("SELECT id,email FROM users WHERE status='active' AND (email=? COLLATE NOCASE OR display_name=? COLLATE NOCASE) LIMIT 2",query,query);
+    const users=await all<{id:string;email:string}>("SELECT id,email FROM users WHERE status='active' AND (LOWER(email)=LOWER(?) OR LOWER(display_name)=LOWER(?)) LIMIT 2",query,query);
     if(users.length!==1||!validSchoolEmail(users[0].email))throw httpError(400,`找不到唯一的學校成員：${query}。請使用已登入過系統的學校信箱。`);
     if(users[0].id!==ownerId)members.set(users[0].id,member.role);
   }

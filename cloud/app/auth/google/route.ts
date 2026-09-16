@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env } from '@/lib/node-env';
 import { appOrigin, cookie, cookies, now, run, sha256, token } from '@/lib/cloud';
 
 export async function GET(request:Request) {

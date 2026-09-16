@@ -1,5 +1,5 @@
 import {mailConfigured,sendMail} from './mail';
-import { env } from 'cloudflare:workers';
+import { env } from './node-env';
 
 export type User = { id:string; email:string; display_name:string; role:string; status:string };
 export type Resource = {

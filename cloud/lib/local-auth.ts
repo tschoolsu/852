@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env } from './node-env';
 import { appOrigin,audit,cookie,first,httpError,isAdminEmail,json,now,requireCsrf,requireUser,run,sessionHash,sha256,token,validSchoolEmail } from './cloud';
 import { hashPassword,validPassword,verifyPassword } from './password';
 import { mailConfigured,sendMail } from './mail';

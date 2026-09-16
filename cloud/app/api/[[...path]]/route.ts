@@ -1,7 +1,7 @@
 import { zipStream, type ZipEntry } from '@/lib/zip';
 import { accessSettings } from '@/lib/access-settings';
 import { authPost } from '@/lib/local-auth';
-import { env } from 'cloudflare:workers';
+import { env } from '@/lib/node-env';
 import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
@@ -36,7 +36,7 @@ export async function GET(request:Request,context:Context) {
       const {user}=await requireUser(request),q=(url.searchParams.get('q') || '').trim().slice(0,100);
       if(q.length<2) return json({users:[]}); const like=`%${q.replace(/[\\%_]/g,'\\$&')}%`;
       const users=await all<{id:string;email:string;display_name:string}>(`SELECT id,email,display_name FROM users WHERE status='active' AND id<>?
-        AND (email LIKE ? ESCAPE '\\' COLLATE NOCASE OR display_name LIKE ? ESCAPE '\\' COLLATE NOCASE) ORDER BY display_name LIMIT 10`,user.id,like,like);
+        AND (LOWER(email) LIKE LOWER(?) ESCAPE '\\' OR LOWER(display_name) LIKE LOWER(?) ESCAPE '\\') ORDER BY display_name LIMIT 10`,user.id,like,like);
       return json({users:users.filter(u=>validSchoolEmail(u.email))});
     }
     if(path[0]==='resources' && path.length===1) {
@@ -154,8 +154,8 @@ async function mutateResource(request:Request,id:string) {
     await audit(auth.user.id,'resource.deleted_permanently',id,{count:ids.length}); return json({ok:true});
   }
   if(operation==='member-add') {
-    assertEditor(state.permission); const query=textValue(body.recipient).trim(); let users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND email=? COLLATE NOCASE",query);
-    if(!users.length)users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND display_name=? COLLATE NOCASE LIMIT 2",query); if(users.length!==1||users[0].id===resource.owner_id||!validSchoolEmail(users[0].email))throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
+    assertEditor(state.permission); const query=textValue(body.recipient).trim(); let users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND LOWER(email)=LOWER(?)",query);
+    if(!users.length)users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND LOWER(display_name)=LOWER(?) LIMIT 2",query); if(users.length!==1||users[0].id===resource.owner_id||!validSchoolEmail(users[0].email))throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
     await run('INSERT INTO resource_members(resource_id,user_id,role) VALUES(?,?,?) ON CONFLICT(resource_id,user_id) DO UPDATE SET role=excluded.role',id,users[0].id,role(body.role));
     await run("UPDATE resources SET updated_at=? WHERE id=?",now(),id); await audit(auth.user.id,'share.member_updated',id,{recipient:users[0].email,role:role(body.role)});
     const notification=await sendShareNotification(request,{recipient:users[0].email,recipientName:users[0].display_name,senderName:auth.user.display_name,resourceTitle:resource.title,permission:role(body.role)});
