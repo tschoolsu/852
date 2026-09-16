@@ -34,6 +34,9 @@ try {
     ('member','member@tschool.tp.edu.tw','測試成員','local:member','member','active','2026-02-01','2026-02-01')`);
   await db.query(`INSERT INTO resources(id,kind,title,description,url,owner_id,access_level,revision,created_at,updated_at) VALUES
     ('private-link','link','私人連結','私有資料','https://example.com/','member','private',1,'2026-02-02','2026-02-02')`);
+  await db.query(`INSERT INTO users(id,email,display_name,google_subject,role,status,created_at,updated_at)
+    SELECT 'fixture-'||i,'student'||i||'@tschool.tp.edu.tw','測試學生 '||i,'local:fixture-'||i,'member','active','2026-02-03','2026-02-03'
+    FROM generate_series(1,52) AS i`);
   for(const [name,value] of Object.entries(tokens)) await db.query(`INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at,created_at) VALUES($1,$2,$3,$4,$5)`,[hash(value),name,csrf,'2099-01-01','2026-03-01']);
   await db.query(`INSERT INTO password_credentials VALUES ('member','fixture-hash','2026-01-01','2026-01-01')`);
   await new Promise(resolve=>smtp.listen(2527,'127.0.0.1',resolve));
@@ -42,7 +45,10 @@ try {
   let ready=false;for(let i=0;i<100;i++){try{if((await fetch(origin)).status<500){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,200))}
   if(!ready)throw Error('Next server did not start: '+logs.slice(-1000));
   const adminList=await api('/api/admin?view=members');check(adminList.status===200,`Admin members failed: ${JSON.stringify(adminList)}`);
-  check(adminList.data.members.some(m=>m.id==='member'&&Number(m.links)===1),'Member statistics incorrect');
+  check(adminList.data.members.length===50&&adminList.data.hasMore,'Member first page did not paginate');
+  const nextMembers=await api('/api/admin?view=members&page=2');
+  check(nextMembers.data.members.length===4&&!nextMembers.data.hasMore,'Member second page incorrect');
+  check(nextMembers.data.members.some(m=>m.id==='member'&&Number(m.links)===1),'Member statistics incorrect');
   check((await api('/api/admin?view=members','member')).status===403,'Ordinary member reached admin API');
   check((await api('/api/admin','member','POST',{csrf,operation:'reset-registration',userId:'admin'})).status===403,'Ordinary member changed account');
   const adminDetail=await api('/api/resources/private-link');check(adminDetail.status===200&&adminDetail.data.resource.permission==='editor','Admin did not receive inherited private access');

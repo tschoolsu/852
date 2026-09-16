@@ -11,6 +11,7 @@ async function requireAdmin(request: Request) {
 const dateInput = (value: string | null) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? value : '';
 const searchInput = (value: string | null) => (value || '').trim().slice(0, 100);
 const likeInput = (value: string) => `%${value.replace(/[\\%_]/g, '\\$&')}%`;
+const pageSize = 50;
 
 export async function adminGet(request: Request, url: URL) {
   await requireAdmin(request);
@@ -18,6 +19,8 @@ export async function adminGet(request: Request, url: URL) {
   const query = searchInput(url.searchParams.get('q'));
   const from = dateInput(url.searchParams.get('from'));
   const to = dateInput(url.searchParams.get('to'));
+  const page = Math.min(10000, Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1));
+  const offset = (page - 1) * pageSize;
   if (view === 'members') {
     const rows = await all(`SELECT u.id,u.email,u.display_name,u.role,u.status,u.created_at,
       (SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id=u.id) AS last_login,
@@ -28,8 +31,8 @@ export async function adminGet(request: Request, url: URL) {
       COALESCE(SUM(r.size_bytes) FILTER (WHERE r.kind='file' AND r.trashed_at IS NULL),0) AS bytes
       FROM users u LEFT JOIN resources r ON r.owner_id=u.id
       WHERE LOWER(u.email) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\'
-      GROUP BY u.id,u.email,u.display_name,u.role,u.status,u.created_at ORDER BY u.created_at DESC LIMIT 200`,likeInput(query),likeInput(query));
-    return json({ members: rows });
+      GROUP BY u.id,u.email,u.display_name,u.role,u.status,u.created_at ORDER BY u.created_at DESC,u.id DESC LIMIT ? OFFSET ?`,likeInput(query),likeInput(query),pageSize+1,offset);
+    return json({ members: rows.slice(0,pageSize), hasMore:rows.length>pageSize });
   }
   if (view === 'events') {
     const member = searchInput(url.searchParams.get('member'));
@@ -42,16 +45,16 @@ export async function adminGet(request: Request, url: URL) {
       WHERE (?='' OR a.actor_id=? OR a.target_id=?)
         AND (?='' OR a.created_at>=?) AND (?='' OR a.created_at<?)
         AND (?='' OR LOWER(COALESCE(r.title,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(u.email,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(a.action) LIKE LOWER(?) ESCAPE '\\')
-      ORDER BY a.created_at ${order},a.id ${order} LIMIT 200`,member,member,member,from,from,to,until,query,likeInput(query),likeInput(query),likeInput(query));
-    return json({ events: rows });
+      ORDER BY a.created_at ${order},a.id ${order} LIMIT ? OFFSET ?`,member,member,member,from,from,to,until,query,likeInput(query),likeInput(query),likeInput(query),pageSize+1,offset);
+    return json({ events: rows.slice(0,pageSize), hasMore:rows.length>pageSize });
   }
   if (view === 'files') {
     const order = url.searchParams.get('order') === 'smallest' ? 'ASC' : 'DESC';
     const rows = await all(`SELECT r.id,r.title,r.size_bytes,r.created_at,r.trashed_at,u.display_name AS owner_name,u.email AS owner_email
       FROM resources r JOIN users u ON u.id=r.owner_id WHERE r.kind='file'
       AND (?='' OR LOWER(r.title) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.email) LIKE LOWER(?) ESCAPE '\\')
-      ORDER BY r.size_bytes ${order},r.created_at DESC LIMIT 200`,query,likeInput(query),likeInput(query));
-    return json({ files: rows });
+      ORDER BY r.size_bytes ${order},r.created_at DESC,r.id DESC LIMIT ? OFFSET ?`,query,likeInput(query),likeInput(query),pageSize+1,offset);
+    return json({ files: rows.slice(0,pageSize), hasMore:rows.length>pageSize });
   }
   if (view === 'health') {
     const [usage, database] = await Promise.all([

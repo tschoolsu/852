@@ -24,26 +24,29 @@ export default function AdminPanel({ csrf, onOpenResource }: { csrf:string;onOpe
   const [view,setView] = useState<'members'|'events'|'files'|'health'>('members');
   const [q,setQ] = useState(''),[member,setMember] = useState(''),[memberName,setMemberName] = useState('');
   const [from,setFrom] = useState(''),[to,setTo] = useState(''),[order,setOrder] = useState('newest');
+  const [page,setPage] = useState(1),[hasMore,setHasMore] = useState(false);
   const [members,setMembers] = useState<Member[]>([]),[events,setEvents] = useState<Event[]>([]),[files,setFiles] = useState<FileRow[]>([]),[health,setHealth] = useState<Health|null>(null);
   const [loading,setLoading] = useState(false),[error,setError] = useState(''),[message,setMessage] = useState('');
   const [confirm,setConfirm] = useState<{user:Member;operation:'reset-registration'|'resend-mail'|'activate'}|null>(null),[pending,setPending] = useState(false);
   const load = useCallback(async(signal?:AbortSignal) => {
     setLoading(true);setError('');
     try {
-      const params = new URLSearchParams({view,q,member,from,to,order});
+      const params = new URLSearchParams({view,q,member,from,to,order,page:String(page)});
       const response = await fetch(`/api/admin?${params}`,{cache:'no-store',signal});
-      const data = await response.json() as {error?:string;members:Member[];events:Event[];files:FileRow[];health:Health};
+      const data = await response.json() as {error?:string;members:Member[];events:Event[];files:FileRow[];health:Health;hasMore?:boolean};
       if(!response.ok) throw new Error(data.error||'無法讀取管理資料。');
+      setHasMore(Boolean(data.hasMore));
       if(view==='members')setMembers(data.members);
       if(view==='events')setEvents(data.events);
       if(view==='files')setFiles(data.files);
       if(view==='health')setHealth(data.health);
     } catch(e) { if(!signal?.aborted)setError((e as Error).message); }
     finally { if(!signal?.aborted)setLoading(false); }
-  },[view,q,member,from,to,order]);
+  },[view,q,member,from,to,order,page]);
   // oxlint-disable-next-line react/react-compiler -- Fetch remote administrator data when filters change.
   useEffect(()=>{const controller=new AbortController();void load(controller.signal);return()=>controller.abort();},[load]);
-  const selectView = (next:typeof view) => {setView(next);setQ('');setMember('');setMemberName('');setError('');setMessage('');};
+  const selectView = (next:typeof view) => {setView(next);setPage(1);setQ('');setMember('');setMemberName('');setError('');setMessage('');};
+  const pagination = view!=='health'&&<div className="admin-pagination"><button disabled={page===1} onClick={()=>setPage(p=>p-1)}>上一頁</button><span>第 {page} 頁</span><button disabled={!hasMore} onClick={()=>setPage(p=>p+1)}>下一頁</button></div>;
   const openResource = async(id:string) => {try{await onOpenResource(id)}catch(e){setError((e as Error).message)}};
   const act = async() => {
     if(!confirm||pending)return;
@@ -60,17 +63,17 @@ export default function AdminPanel({ csrf, onOpenResource }: { csrf:string;onOpe
       {([['members','成員'],['events','時間'],['files','檔案大小'],['health','系統狀態']] as const).map(([key,label])=><button key={key} className={view===key?'active':''} onClick={()=>selectView(key)} aria-current={view===key?'page':undefined}>{label}</button>)}
     </nav>
     {view!=='health'&&<div className="admin-filters">
-      <label>搜尋{view==='members'?'成員':'檔案或成員'}<input value={q} onChange={e=>setQ(e.target.value)} placeholder={view==='members'?'顯示名稱或學校信箱':'名稱或學校信箱'}/></label>
-      {view==='events'&&<><label>從<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>到<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label></>}
-      {view!=='members'&&<label>排序<select value={order} onChange={e=>setOrder(e.target.value)}>{view==='events'?<><option value="newest">最新操作</option><option value="oldest">最舊操作</option></>:<><option value="newest">檔案最大</option><option value="smallest">檔案最小</option></>}</select></label>}
+      <label>搜尋{view==='members'?'成員':'檔案或成員'}<input value={q} onChange={e=>{setPage(1);setQ(e.target.value)}} placeholder={view==='members'?'顯示名稱或學校信箱':'名稱或學校信箱'}/></label>
+      {view==='events'&&<><label>從<input type="date" value={from} onChange={e=>{setPage(1);setFrom(e.target.value)}}/></label><label>到<input type="date" value={to} onChange={e=>{setPage(1);setTo(e.target.value)}}/></label></>}
+      {view!=='members'&&<label>排序<select value={order} onChange={e=>{setPage(1);setOrder(e.target.value)}}>{view==='events'?<><option value="newest">最新操作</option><option value="oldest">最舊操作</option></>:<><option value="newest">檔案最大</option><option value="smallest">檔案最小</option></>}</select></label>}
     </div>}
-    {member&&view==='events'&&<button className="admin-back" onClick={()=>{setMember('');setMemberName('');setView('members')}}>← 返回成員　目前：{memberName}</button>}
+    {member&&view==='events'&&<button className="admin-back" onClick={()=>{setPage(1);setMember('');setMemberName('');setView('members')}}>← 返回成員　目前：{memberName}</button>}
     {message&&<output className="admin-message">{message}</output>}
     {error&&<p className="notice" role="alert">{error}</p>}
     {loading&&<output>正在讀取管理資料…</output>}
-    {!loading&&view==='members'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>成員</th><th>註冊時間</th><th>最近登入</th><th>檔案</th><th>連結</th><th>資料夾</th><th>檔案空間</th><th>處理</th></tr></thead><tbody>{members.map(u=><tr key={u.id}><td><button className="admin-link" aria-label={`查看 ${u.display_name} 的操作紀錄`} onClick={()=>{setMember(u.id);setMemberName(u.display_name);setView('events');setQ('')}}>{u.display_name}</button><small>{u.email}</small>{u.status!=='active'&&<small className="admin-status">{u.status==='reset_required'?'待重新註冊':u.status==='pending'?'待審核':'已停用'}</small>}</td><td>{date(u.created_at)}</td><td>{date(u.last_login_audit||u.last_login)}</td><td>{u.files}</td><td>{u.links}</td><td>{u.folders}</td><td>{bytes(u.bytes)}</td><td><div className="admin-row-actions">{u.status==='pending'&&<button aria-label={`啟用 ${u.display_name}`} onClick={()=>setConfirm({user:u,operation:'activate'})}>啟用帳號</button>}<button aria-label={`要求 ${u.display_name} 重新註冊`} disabled={u.role==='admin'||u.status==='reset_required'} onClick={()=>setConfirm({user:u,operation:'reset-registration'})}>要求重新註冊</button><button aria-label={`重寄設定信給 ${u.display_name}`} disabled={u.status==='disabled'} onClick={()=>setConfirm({user:u,operation:'resend-mail'})}>重寄設定信</button></div></td></tr>)}</tbody></table>{!members.length&&<p className="admin-empty">找不到成員。</p>}<p className="admin-footnote">統計為目前未在垃圾桶的項目；重新註冊保留原帳號 ID 與檔案擁有者。最多顯示 200 位成員。</p></div>}
-    {!loading&&view==='events'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>操作時間</th><th>成員</th><th>操作</th><th>項目</th><th>補充資訊</th></tr></thead><tbody>{events.map(e=><tr key={e.id}><td>{date(e.created_at)}</td><td>{e.actor_name}<small>{e.actor_email}</small></td><td>{labels[e.action]||e.action}</td><td>{e.resource_title?<button className="admin-link" onClick={()=>e.target_id&&void openResource(e.target_id)}>{e.resource_title}</button>:'—'}</td><td><small>{eventDetails(e.details)}</small></td></tr>)}</tbody></table>{!events.length&&<p className="admin-empty">此條件沒有操作紀錄。</p>}<p className="admin-footnote">最多顯示 200 筆；永久刪除項目的名稱可能已無法從資料庫取得。</p></div>}
-    {!loading&&view==='files'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>檔案</th><th>擁有者</th><th>建立時間</th><th>大小</th><th>狀態</th></tr></thead><tbody>{files.map(f=><tr key={f.id}><td><button className="admin-link" onClick={()=>void openResource(f.id)}>{f.title}</button></td><td>{f.owner_name}<small>{f.owner_email}</small></td><td>{date(f.created_at)}</td><td>{bytes(f.size_bytes)}</td><td>{f.trashed_at?'垃圾桶':'使用中'}</td></tr>)}</tbody></table>{!files.length&&<p className="admin-empty">沒有符合條件的檔案。</p>}<p className="admin-footnote">最多顯示 200 筆，包含垃圾桶中的檔案。</p></div>}
+    {!loading&&view==='members'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>成員</th><th>註冊時間</th><th>最近登入</th><th>檔案</th><th>連結</th><th>資料夾</th><th>檔案空間</th><th>處理</th></tr></thead><tbody>{members.map(u=><tr key={u.id}><td><button className="admin-link" aria-label={`查看 ${u.display_name} 的操作紀錄`} onClick={()=>{setPage(1);setMember(u.id);setMemberName(u.display_name);setView('events');setQ('')}}>{u.display_name}</button><small>{u.email}</small>{u.status!=='active'&&<small className="admin-status">{u.status==='reset_required'?'待重新註冊':u.status==='pending'?'待審核':'已停用'}</small>}</td><td>{date(u.created_at)}</td><td>{date(u.last_login_audit||u.last_login)}</td><td>{u.files}</td><td>{u.links}</td><td>{u.folders}</td><td>{bytes(u.bytes)}</td><td><div className="admin-row-actions">{u.status==='pending'&&<button aria-label={`啟用 ${u.display_name}`} onClick={()=>setConfirm({user:u,operation:'activate'})}>啟用帳號</button>}<button aria-label={`要求 ${u.display_name} 重新註冊`} disabled={u.role==='admin'||u.status==='reset_required'} onClick={()=>setConfirm({user:u,operation:'reset-registration'})}>要求重新註冊</button><button aria-label={`重寄設定信給 ${u.display_name}`} disabled={u.status==='disabled'} onClick={()=>setConfirm({user:u,operation:'resend-mail'})}>重寄設定信</button></div></td></tr>)}</tbody></table>{!members.length&&<p className="admin-empty">找不到成員。</p>}<p className="admin-footnote">統計為目前未在垃圾桶的項目；重新註冊保留原帳號 ID 與檔案擁有者。</p>{pagination}</div>}
+    {!loading&&view==='events'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>操作時間</th><th>成員</th><th>操作</th><th>項目</th><th>補充資訊</th></tr></thead><tbody>{events.map(e=><tr key={e.id}><td>{date(e.created_at)}</td><td>{e.actor_name}<small>{e.actor_email}</small></td><td>{labels[e.action]||e.action}</td><td>{e.resource_title?<button className="admin-link" onClick={()=>e.target_id&&void openResource(e.target_id)}>{e.resource_title}</button>:'—'}</td><td><small>{eventDetails(e.details)}</small></td></tr>)}</tbody></table>{!events.length&&<p className="admin-empty">此條件沒有操作紀錄。</p>}<p className="admin-footnote">永久刪除項目的名稱可能已無法從資料庫取得。</p>{pagination}</div>}
+    {!loading&&view==='files'&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>檔案</th><th>擁有者</th><th>建立時間</th><th>大小</th><th>狀態</th></tr></thead><tbody>{files.map(f=><tr key={f.id}><td><button className="admin-link" onClick={()=>void openResource(f.id)}>{f.title}</button></td><td>{f.owner_name}<small>{f.owner_email}</small></td><td>{date(f.created_at)}</td><td>{bytes(f.size_bytes)}</td><td>{f.trashed_at?'垃圾桶':'使用中'}</td></tr>)}</tbody></table>{!files.length&&<p className="admin-empty">沒有符合條件的檔案。</p>}<p className="admin-footnote">包含垃圾桶中的檔案。</p>{pagination}</div>}
     {!loading&&view==='health'&&health&&<><div className="admin-health-grid">
       <article><h2>目前檔案</h2><strong>{health.fileCount} 個 · {bytes(health.currentBytes)}</strong><p>資料庫記錄的現有檔案大小；歷史版本另有 {health.versionCount} 筆。</p></article>
       <article><h2>資料庫</h2><strong>{bytes(health.databaseBytes)}</strong><p>目前 PostgreSQL 資料庫大小。</p></article>
