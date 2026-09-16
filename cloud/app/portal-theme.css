@@ -1,0 +1,171 @@
+/* T-Files visual language based on the TSchool service portal. Layout stays in globals.css. */
+:root {
+  --background: #fafbf8;
+  --foreground: #1d2020;
+  --card: #fff;
+  --ink: #1d2020;
+  --muted-ink: #626b68;
+  --line: #d6ddd8;
+  --primary: #1d2020;
+  --navy: #1d2020;
+  --blue: #176842;
+  --pale: #e5f7e8;
+  --portal-mint: #dff5e5;
+  --portal-peach: #fff0df;
+  --portal-lavender: #eeeafd;
+  --portal-outline: #252929;
+}
+
+html, body { background: var(--background); }
+button, input, textarea, select { color: var(--ink); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid #48ad78;
+  outline-offset: 2px;
+}
+
+.brand-mark, .loading-mark {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 10px;
+  background: var(--portal-outline);
+  box-shadow: 3px 3px 0 #9bd8ab;
+}
+.brand strong { font-weight: 800; letter-spacing: -.025em; }
+.brand small, .account small { color: var(--muted-ink); }
+.eyebrow { color: var(--blue); }
+
+/* Sign-in, registration, and password recovery share the same split layout. */
+.login-intro {
+  color: var(--ink);
+  background-color: #f7fbf6;
+  background-image: radial-gradient(#d8e5dc 1px, transparent 1px);
+  background-size: 22px 22px;
+  border-right: 1.5px solid var(--portal-outline);
+}
+.login-intro h1 { font-weight: 850; letter-spacing: -.055em; }
+.login-intro p { color: #4f5d55; }
+.login-intro small { color: #606e64; }
+.brand.light .brand-mark { background: var(--portal-outline); color: #fff; }
+.login-panel { background: #fff; }
+.login-card {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 16px;
+  box-shadow: 5px 5px 0 var(--portal-outline);
+}
+.login-card h2 { font-weight: 800; letter-spacing: -.035em; }
+.login-card .form-stack input {
+  border: 1.5px solid #777f79;
+  border-radius: 9px;
+  background: #fff;
+}
+.login-card .form-stack input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #84cfa166; }
+.login-card .form-stack > button[type="submit"] {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 9px;
+  background: var(--portal-outline);
+  color: #fff;
+  box-shadow: 3px 3px 0 #9bd8ab;
+}
+.login-card .form-stack > button[type="submit"]:hover { background: #315b42; }
+.auth-links button { color: var(--blue); font-weight: 700; }
+
+/* Workspace shell. The grid, sidebar, search, and floating action stay in place. */
+.topbar { border-bottom: 1.5px solid var(--portal-outline); }
+.search-box {
+  border: 1.5px solid #cdd5cf;
+  border-radius: 10px;
+  background: #f8faf8;
+}
+.search-box:focus-within { border-color: var(--portal-outline); box-shadow: 3px 3px 0 #b9e6c2; }
+.search-box input::placeholder { color: #7a8580; }
+.sidebar { border-right: 1.5px solid var(--portal-outline); background: #fff; }
+.nav-label {
+  color: #536158;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #bdc9c0;
+}
+.nav-item { color: #343e38; font-weight: 600; }
+.nav-item:hover { background: #f0f8f1; }
+.nav-item.active {
+  border: 1.5px solid var(--portal-outline);
+  background: var(--portal-mint);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--portal-outline);
+}
+.sidebar-note {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 14px;
+  background: var(--portal-peach);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.sidebar-note p { color: #4d5650; }
+.content {
+  background-color: var(--background);
+  background-image: radial-gradient(#e0e8e1 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.page-head h1 { font-weight: 850; letter-spacing: -.05em; }
+.page-head p:last-child { color: #555f58; }
+.selection-toolbar { color: #354039; }
+.selection-toolbar input, .row-check input { accent-color: var(--blue); }
+.operation-status { border: 1px solid #aad9b5; }
+
+/* File and link list adopts the portal's bordered, offset-shadow cards. */
+.file-table {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.file-header {
+  background: var(--portal-mint);
+  color: #303d34;
+  border-bottom: 1.5px solid var(--portal-outline);
+}
+.file-row { border-bottom-color: #e0e7e1; }
+button.file-row:hover { background: #f3faf4; }
+.selectable-row { border-bottom-color: #e0e7e1; }
+.row-selected { background: #eaf8ec; }
+.kind-icon {
+  border: 1px solid var(--portal-outline);
+  background: #e5f2fc;
+  color: #254d65;
+}
+.kind-icon.folder { background: var(--portal-lavender); color: #564981; }
+.kind-icon.link { background: var(--portal-mint); color: #236341; }
+.empty span { border: 1px solid var(--portal-outline); background: var(--portal-mint); color: var(--ink); }
+.fab {
+  border: 1.5px solid var(--portal-outline);
+  background: var(--portal-outline);
+  box-shadow: 5px 5px 0 #9bd8ab, 0 12px 26px #1d202022;
+}
+.fab:hover { background: #315b42; }
+.bulk-actions, .upload-queue {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.upload-queue header { background: var(--portal-mint); border-bottom-color: var(--portal-outline); }
+.upload-entry:hover, .member-results button:hover { background: #f0f8f1; }
+.queue-selection-head { background: var(--portal-mint); }
+.detail-body dl div { background: #f1f7f1; border: 1px solid #d6e6d8; }
+.action-grid button:hover, .action-button:hover, .folder-choice:hover { background: #eff8f0; }
+
+/* Radix dialogs and menus also render correctly on the server. */
+[data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"] { background: #1d202080; }
+[data-slot="dialog-content"], [data-slot="alert-dialog-content"] {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 5px 5px 0 var(--portal-outline), 0 24px 64px #1d202033;
+}
+[data-slot="dropdown-menu-content"] {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+[data-slot="dropdown-menu-item"]:hover, [data-slot="dropdown-menu-item"]:focus { background: var(--portal-mint); }
+[data-slot="dialog-footer"] button[type="submit"],
+[data-slot="alert-dialog-footer"] button[data-slot="alert-dialog-action"] { background: var(--portal-outline); border-color: var(--portal-outline); }
+
+@media (max-width: 650px) {
+  .login-intro { border-right: 0; border-bottom: 1.5px solid var(--portal-outline); }
+  .sidebar { border-right: 1.5px solid var(--portal-outline); }
+  .file-table { box-shadow: 3px 3px 0 var(--portal-outline); }
+  .search-box { border-color: var(--portal-outline); }
+}
