@@ -13,8 +13,8 @@ async function rateLimit(action:string,identity:string,limit:number,seconds:numb
   const timestamp=Date.now(),expires=timestamp+seconds*1000;
   const key=await sha256(`${action}:${identity}`);
   await run(`INSERT INTO auth_rate_limits(key,hits,expires_at) VALUES(?,1,?)
-    ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN expires_at<=? THEN 1 ELSE hits+1 END,
-    expires_at=CASE WHEN expires_at<=? THEN excluded.expires_at ELSE expires_at END`,key,expires,timestamp,timestamp);
+    ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN auth_rate_limits.expires_at<=? THEN 1 ELSE auth_rate_limits.hits+1 END,
+    expires_at=CASE WHEN auth_rate_limits.expires_at<=? THEN excluded.expires_at ELSE auth_rate_limits.expires_at END`,key,expires,timestamp,timestamp);
   const row=await first<{hits:number}>('SELECT hits FROM auth_rate_limits WHERE key=?',key);
   if(!row||row.hits>limit)throw httpError(429,'操作太頻繁，請稍後再試。');
 }
