@@ -212,3 +212,68 @@ button.file-row:hover { background: #f3faf4; }
   .file-table { box-shadow: 3px 3px 0 var(--portal-outline); }
   .search-box { border-color: var(--portal-outline); }
 }
+
+/* Administrator workspace follows the existing sidebar and content position. */
+.admin-panel { width: 100%; min-width: 0; }
+.admin-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; }
+.admin-tabs button {
+  padding: 9px 16px;
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 999px;
+  background: #fff;
+  font-weight: 700;
+}
+.admin-tabs button.active { background: var(--portal-mint); box-shadow: 3px 3px 0 var(--portal-outline); }
+.admin-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 18px; }
+.admin-filters label { display: grid; gap: 6px; min-width: 150px; color: #39443d; font-size: 13px; font-weight: 700; }
+.admin-filters label:first-child { flex: 1 1 240px; }
+.admin-filters input, .admin-filters select {
+  height: 40px; width: 100%; padding: 8px 10px;
+  border: 1.5px solid #87948a; border-radius: 8px; background: #fff;
+}
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.admin-table { width: 100%; min-width: 780px; border-collapse: collapse; text-align: left; font-size: 13px; }
+.admin-table th { padding: 13px 12px; background: var(--portal-mint); white-space: nowrap; }
+.admin-table td { padding: 14px 12px; border-top: 1px solid #e1e8e1; vertical-align: top; }
+.admin-table small { display: block; margin-top: 4px; color: var(--muted-ink); overflow-wrap: anywhere; }
+.admin-table .admin-status { color: #9a551c; font-weight: 700; }
+.admin-link, .admin-back {
+  padding: 0; border: 0; background: transparent; color: var(--blue);
+  text-align: left; font-weight: 750; text-decoration: underline; text-underline-offset: 3px;
+}
+.admin-link { overflow-wrap: anywhere; }
+.admin-back { margin-bottom: 14px; }
+.admin-row-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 160px; }
+.admin-row-actions button {
+  padding: 6px 8px; border: 1px solid var(--portal-outline);
+  border-radius: 8px; background: #fff; font-size: 12px;
+}
+.admin-row-actions button:hover:not(:disabled) { background: var(--portal-mint); }
+.admin-row-actions button:disabled { opacity: .45; cursor: default; }
+.admin-empty, .admin-footnote { padding: 12px 16px; margin: 0; color: var(--muted-ink); font-size: 12px; }
+.admin-footnote { margin-top: 8px; padding: 4px 0; line-height: 1.6; }
+.admin-message { padding: 12px; border: 1px solid #a9d2af; border-radius: 8px; background: var(--portal-mint); }
+.admin-health-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 16px; margin-bottom: 28px; }
+.admin-health-grid article {
+  min-width: 0; padding: 18px; border: 1.5px solid var(--portal-outline);
+  border-radius: 14px; background: #fff; box-shadow: 3px 3px 0 var(--portal-outline);
+}
+.admin-health-grid h2 { font-size: 14px; margin: 0 0 12px; }
+.admin-health-grid strong { display: block; font-size: 18px; overflow-wrap: anywhere; }
+.admin-health-grid p { margin: 10px 0 0; color: var(--muted-ink); font-size: 12px; line-height: 1.55; }
+.admin-section-title { font-size: 18px; margin: 12px 0; }
+.admin-confirm-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 16px; background: #1d202080; }
+.admin-confirm { position: relative; width: min(460px,100%); margin: 0; padding: 24px; border: 1.5px solid var(--portal-outline); border-radius: 16px; background: #fff; color: var(--ink); box-shadow: 5px 5px 0 var(--portal-outline); }
+.admin-confirm h2 { margin: 0 0 12px; font-size: 21px; }
+.admin-confirm p { color: #46514a; line-height: 1.6; overflow-wrap: anywhere; }
+.admin-confirm > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+@media (max-width: 650px) {
+  .admin-filters label, .admin-filters label:first-child { flex: 1 1 100%; }
+  .admin-table-wrap { box-shadow: 3px 3px 0 var(--portal-outline); }
+}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type Syntheti
 import { ArchiveRestore, ChevronRight, Download, File, FileImage, FileText, Folder, FolderInput, History, Link as LinkIcon, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2, Upload, Lock, X } from 'lucide-react';
 import { AccessEditor, UploadAccessDialog } from './upload-access-dialog';
 import { UploadQueue } from './upload-queue';
+import AdminPanel from './admin-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,6 +40,7 @@ const eventLabel=(event:string)=>({created:'建立',updated:'修改',moved:'移�
 
 export default function ClientApp(){
   const [profileOpen,setProfileOpen]=useState(false);
+  const [adminMode,setAdminMode]=useState(false);
   const [checkedIds,setCheckedIds]=useState<Set<string>>(new Set());
   const [user,setUser]=useState<User|null>(null),[csrf,setCsrf]=useState(''),[checking,setChecking]=useState(true);
   const [items,setItems]=useState<Item[]>([]),[folder,setFolder]=useState<Item|null>(null),[scope,setScope]=useState<'accessible'|'mine'|'trash'|'files'|'links'>('accessible');
@@ -60,6 +62,7 @@ export default function ClientApp(){
   useEffect(()=>{const controller=new AbortController();void load(controller.signal);return()=>controller.abort();},[load]);
   const closeDetail=()=>{++detailRequest.current;setConfirmDelete(false);setSelected(null);setDetail(null);setMode('');setGeneratedLink('');setOperationError('');};
   const openDetail=async(item:Item,manage=false)=>{if(mutationLock.current)return;if(!item.permission){setSelected(item);setDetail(null);setMode('');return;}if(item.kind==='folder'&&!item.trashed_at&&!manage){setParent(item.id);return;}const id=++detailRequest.current;setSelected(item);setDetail(null);setMode('');setOperationError('');setMessage('');try{const data=await requestJson<Detail>(`/api/resources/${item.id}?share=${encodeURIComponent(share)}&trash=${item.trashed_at?'1':'0'}`);if(id===detailRequest.current)setDetail(data);}catch(e){if(id===detailRequest.current){closeDetail();setMessage((e as Error).message)}}};
+  const openAdminResource=async(id:string)=>{setOperationError('');const data=await requestJson<Detail>(`/api/resources/${encodeURIComponent(id)}?trash=1`);setSelected(data.resource);setDetail(data);setMode('');};
   useEffect(()=>{if(!user)return;const id=new URLSearchParams(window.location.search).get('item');if(!id)return;const controller=new AbortController();requestJson<Detail>('/api/resources/'+encodeURIComponent(id),{signal:controller.signal}).then(data=>{if(data.resource.kind==='folder')setParent(data.resource.id);else{setSelected(data.resource);setDetail(data);}}).catch(e=>{if(!controller.signal.aborted)setMessage((e as Error).message);});return()=>controller.abort();},[user]);
   const refresh=async()=>{closeDetail();setMessage('操作已完成。');await load();};
   const mutate=async(operation:string,data:Record<string,unknown>|FormData={})=>{
@@ -84,14 +87,15 @@ export default function ClientApp(){
       <div className="account"><span><strong>{user.displayName}</strong><small>{user.email}{user.role==='admin'?' · 管理員':''}</small></span><Button variant="ghost" size="icon" aria-label="修改顯示名稱" onClick={()=>setProfileOpen(true)}><Pencil/></Button><Button variant="ghost" size="icon" aria-label="登出" onClick={async()=>{await requestJson('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf})});location.href='/';}}><LogOut/></Button></div>
     </header>
     <aside className={`sidebar ${mobile?'sidebar-open':''}`}><button className="sidebar-close" onClick={()=>setMobile(false)}><X/></button><p className="nav-label">檔案庫</p>
-      <Nav active={scope==='accessible'} icon={<Folder/>} label="全部" onClick={()=>{if(mutationLock.current)return;setScope('accessible');setParent('');setMobile(false)}}/>
-      <Nav active={scope==='files'} icon={<File/>} label="檔案" onClick={()=>{if(mutationLock.current)return;setScope('files');setParent('');setMobile(false)}}/>
-      <Nav active={scope==='links'} icon={<LinkIcon/>} label="連結" onClick={()=>{if(mutationLock.current)return;setScope('links');setParent('');setMobile(false)}}/>
-      <Nav active={scope==='mine'} icon={<Upload/>} label="我的上傳紀錄" onClick={()=>{if(mutationLock.current)return;setScope('mine');setParent('');setMobile(false)}}/>
-      <Nav active={scope==='trash'} icon={<Trash2/>} label="垃圾桶" onClick={()=>{if(mutationLock.current)return;setScope('trash');setParent('');setMobile(false)}}/>
+      <Nav active={!adminMode&&scope==='accessible'} icon={<Folder/>} label="全部" onClick={()=>{if(mutationLock.current)return;setAdminMode(false);setScope('accessible');setParent('');setMobile(false)}}/>
+      <Nav active={!adminMode&&scope==='files'} icon={<File/>} label="檔案" onClick={()=>{if(mutationLock.current)return;setAdminMode(false);setScope('files');setParent('');setMobile(false)}}/>
+      <Nav active={!adminMode&&scope==='links'} icon={<LinkIcon/>} label="連結" onClick={()=>{if(mutationLock.current)return;setAdminMode(false);setScope('links');setParent('');setMobile(false)}}/>
+      <Nav active={!adminMode&&scope==='mine'} icon={<Upload/>} label="我的上傳紀錄" onClick={()=>{if(mutationLock.current)return;setAdminMode(false);setScope('mine');setParent('');setMobile(false)}}/>
+      <Nav active={!adminMode&&scope==='trash'} icon={<Trash2/>} label="垃圾桶" onClick={()=>{if(mutationLock.current)return;setAdminMode(false);setScope('trash');setParent('');setMobile(false)}}/>
+      {user.role==='admin'&&<Nav active={adminMode} icon={<Lock/>} label="管理員" onClick={()=>{if(mutationLock.current)return;setAdminMode(true);setMobile(false)}}/>}
       <div className="sidebar-note"><strong>學校帳號限定</strong><p>只有登入過本系統的 @tschool.tp.edu.tw 成員可被指定共享。</p></div>
     </aside>
-    <main className="content"><div className="page-head"><div><p className="eyebrow">{scope==='mine'?'MY UPLOADS':scope==='trash'?'TRASH':scope==='files'?'FILES':scope==='links'?'LINKS':'LIBRARY'}</p><h1>{folder?.title || (scope==='mine'?'我的上傳紀錄':scope==='trash'?'垃圾桶':scope==='files'?'檔案專區':scope==='links'?'連結專區':'全部')}</h1><p>{scope==='trash'?'擁有者與可編輯成員可以還原或永久刪除。':scope==='files'?'顯示所有資料夾中檔案。':scope==='links'?'顯示所有資料夾中連結。':'集中管理學生會的檔案、網址與資料夾。'}</p></div>{folder&&['owner','editor'].includes(folder.permission)&&<Button variant="outline" disabled={busy} onClick={()=>void openDetail(folder,true)}>管理資料夾</Button>}{parent&&<Button variant="outline" disabled={busy} onClick={()=>setParent(folder?.parent_id||'')}>回上一層</Button>}</div>
+    <main className="content">{adminMode?<AdminPanel csrf={csrf} onOpenResource={openAdminResource}/>:<><div className="page-head"><div><p className="eyebrow">{scope==='mine'?'MY UPLOADS':scope==='trash'?'TRASH':scope==='files'?'FILES':scope==='links'?'LINKS':'LIBRARY'}</p><h1>{folder?.title || (scope==='mine'?'我的上傳紀錄':scope==='trash'?'垃圾桶':scope==='files'?'檔案專區':scope==='links'?'連結專區':'全部')}</h1><p>{scope==='trash'?'擁有者與可編輯成員可以還原或永久刪除。':scope==='files'?'顯示所有資料夾中檔案。':scope==='links'?'顯示所有資料夾中連結。':'集中管理學生會的檔案、網址與資料夾。'}</p></div>{folder&&['owner','editor'].includes(folder.permission)&&<Button variant="outline" disabled={busy} onClick={()=>void openDetail(folder,true)}>管理資料夾</Button>}{parent&&<Button variant="outline" disabled={busy} onClick={()=>setParent(folder?.parent_id||'')}>回上一層</Button>}</div>
       {message&&<div className="notice" role="alert">{message}</div>}
       {listError&&<div className="notice" role="alert">{listError}<Button variant="outline" onClick={()=>void load()}>重新載入清單</Button></div>}
       {loading&&<OperationStatus active label="正在載入清單…"/>}
@@ -101,9 +105,10 @@ export default function ClientApp(){
         {!loading&&!listError&&!items.length&&<div className="empty"><span>{scope==='trash'?'00':'+'}</span><h2>{query?'找不到符合的內容':scope==='trash'?'垃圾桶是空的':'這裡還沒有內容'}</h2><p>{scope==='trash'?'刪除的檔案、連結與資料夾會出現在這裡。':'使用右下角的加號新增第一個項目。'}</p></div>}
       </div>
       <BulkActions items={items.filter(item=>checkedIds.has(item.id))} trash={scope==='trash'} csrf={csrf} share={share} disabled={busy||loading||Boolean(listError)} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={async failed=>{await load();setCheckedIds(new Set(failed));}}/>
+      </>}
       <footer className="workspace-footer">© 2026 TSchool 學生會數位部</footer>
     </main>
-    {scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2">{scope!=='links'&&<DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem>}{scope!=='files'&&<DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem>}{scope!=='files'&&scope!=='links'&&<DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>}
+    {!adminMode&&scope!=='trash'&&<DropdownMenu><DropdownMenuTrigger render={<button className="fab" disabled={busy} aria-label="新增內容"><Plus/></button>}/><DropdownMenuContent side="top" align="end" className="w-48 p-2">{scope!=='links'&&<DropdownMenuItem onClick={()=>document.getElementById('multi-upload-picker')?.click()}><Upload/>上傳檔案</DropdownMenuItem>}{scope!=='files'&&<DropdownMenuItem onClick={()=>setCreateKind('link')}><LinkIcon/>發表連結</DropdownMenuItem>}{scope!=='files'&&scope!=='links'&&<DropdownMenuItem onClick={()=>setCreateKind('folder')}><Folder/>建立資料夾</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>}
     {profileOpen&&<ProfileDialog name={user.displayName} csrf={csrf} onClose={()=>setProfileOpen(false)} onSaved={displayName=>{setUser({...user,displayName});void load()}}/>}
     <UploadQueue owner={{name:user.displayName,email:user.email}} csrf={csrf} parent={parent} destination={folder?.title||'檔案庫最上層'} disabled={busy} setBusy={value=>{mutationLock.current=value;setBusy(value)}} onDone={load}/>
     <CreateDialog key={createKind} kind={createKind} setKind={setCreateKind} csrf={csrf} parent={parent} onDone={refresh}/>

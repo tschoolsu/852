@@ -1,8 +1,9 @@
 import { zipStream, type ZipEntry } from '@/lib/zip';
 import { accessSettings } from '@/lib/access-settings';
 import { authPost } from '@/lib/local-auth';
+import { adminGet, adminPost } from '@/lib/admin';
 import { env } from '@/lib/node-env';
-import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
+import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, isAdminEmail, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
 const textValue=(value:unknown)=>typeof value==='string'?value:'';
@@ -32,6 +33,7 @@ export async function GET(request:Request,context:Context) {
       const auth=await currentUser(request); if(!auth) return json({authenticated:false},401);
       return json({authenticated:true,user:{id:auth.user.id,email:auth.user.email,displayName:auth.user.display_name,role:auth.user.role},csrf:auth.csrf});
     }
+    if(path[0]==='admin' && path.length===1) return await adminGet(request,url);
     if(path[0]==='users') {
       const {user}=await requireUser(request),q=(url.searchParams.get('q') || '').trim().slice(0,100);
       if(q.length<2) return json({users:[]}); const like=`%${q.replace(/[\\%_]/g,'\\$&')}%`;
@@ -60,7 +62,8 @@ export async function GET(request:Request,context:Context) {
     if(path[0]==='resources' && path[1]) {
       const id=path[1],share=url.searchParams.get('share') || '';
       if(path[2]==='download') return await download(request,id,share,url.searchParams.get('revision'));
-      const {resource,permission}=await resourceAccess(request,id,share,url.searchParams.get('trash')==='1');
+      const {resource,permission,user}=await resourceAccess(request,id,share,url.searchParams.get('trash')==='1');
+      if(user.role==='admin'&&isAdminEmail(user.email)&&resource.owner_id!==user.id)await audit(user.id,'admin.resource_opened',id,{ownerId:resource.owner_id});
       const [owner,versions,members]=await Promise.all([
         first<{display_name:string;email:string}>('SELECT display_name,email FROM users WHERE id=?',resource.owner_id),
         ['owner','editor'].includes(permission)?all('SELECT revision,event,actor_id,original_name,size_bytes,created_at FROM resource_versions WHERE resource_id=? ORDER BY revision DESC',id):[],
@@ -76,6 +79,7 @@ export async function POST(request:Request,context:Context) {
   try {
     const path=(await context.params).path || [];
     if(path[0]==='auth'&&path.length===2)return await authPost(request,path[1]);
+    if(path[0]==='admin'&&path.length===1)return await adminPost(request);
     if(path[0]==='logout') {
       const auth=await requireUser(request),body=await parseBody(request); requireCsrf(request,auth.csrf,textValue(body.csrf));
       const raw=(request.headers.get('cookie')||'').match(/(?:^|;\s*)tfiles_session=([^;]+)/)?.[1]; if(raw) await run('DELETE FROM sessions WHERE token_hash=?',await sessionHash(decodeURIComponent(raw)));
