@@ -1,0 +1,4 @@
+.login-card .form-stack input{display:block;width:100%;min-width:0;height:46px;padding:10px 13px;border:1px solid #cdd8e0;border-radius:9px;background:#fff;color:var(--ink);outline:none}
+.login-card .form-stack input:focus{border-color:#5f91bd;box-shadow:0 0 0 3px #2a79b61f}
+.login-card .form-stack>button[type="submit"]{min-height:46px;padding:11px 16px;border:1px solid var(--navy);border-radius:9px;background:var(--navy);color:#fff;font-weight:700}
+.login-card .form-stack>button[type="submit"]:hover{background:#174e74}
