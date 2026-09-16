@@ -130,7 +130,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   color: #303d34;
   border-bottom: 1.5px solid var(--portal-outline);
 }
+.selection-header { width: calc(100% - 44px); }
 .file-row { border-bottom-color: #e0e7e1; }
+.file-name .file-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.45;
+}
 button.file-row:hover { background: #f3faf4; }
 .selectable-row { border-bottom-color: #e0e7e1; }
 .row-selected { background: #eaf8ec; }
@@ -155,6 +164,17 @@ button.file-row:hover { background: #f3faf4; }
   box-shadow: 4px 4px 0 var(--portal-outline);
 }
 .upload-queue header { background: var(--portal-mint); border-bottom-color: var(--portal-outline); }
+.upload-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1.5px solid #777f79;
+  border-radius: 9px;
+  background: #fff;
+  resize: vertical;
+}
+.upload-editor textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #84cfa166; }
 .upload-queue footer .queue-action {
   min-height: 34px;
   padding: 6px 12px;
@@ -168,6 +188,8 @@ button.file-row:hover { background: #f3faf4; }
 .upload-entry:hover, .member-results button:hover { background: #f0f8f1; }
 .queue-selection-head { background: var(--portal-mint); }
 .detail-body dl div { background: #f1f7f1; border: 1px solid #d6e6d8; }
+.detail-body > p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-body dl { margin: 0 0 12px; }
 .action-grid button:hover, .action-button:hover, .folder-choice:hover { background: #eff8f0; }
 
 /* Radix dialogs and menus also render correctly on the server. */
