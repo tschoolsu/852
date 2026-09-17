@@ -2,6 +2,15 @@ node_modules
 .git
 .env
 .env.*
+.dev.vars*
+.cloud-site-git/
+cloud/
+cloud-selection-release/
+*.tar.gz
+*.zip
+.next/
+dist/
+coverage/
 *.pem
 *.key
 **/client_secret_*.json
