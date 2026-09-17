@@ -30,7 +30,10 @@ export async function authPost(request:Request,action:string) {
   if(action==='profile') {
     const auth=await requireUser(request);requireCsrf(request,auth.csrf,typeof body.csrf==='string'?body.csrf:'');
     const displayName=nameValue(body.displayName);if(!displayName)throw httpError(400,'請輸入顯示名稱。');
-    await run('UPDATE users SET display_name=?,updated_at=? WHERE id=?',displayName,now(),auth.user.id);
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET display_name=?,updated_at=? WHERE id=?').bind(displayName,now(),auth.user.id),
+      env.DB.prepare('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)').bind(auth.user.id,'auth.profile_updated',auth.user.id,JSON.stringify({previousName:auth.user.display_name,displayName}),now()),
+    ]);
     return json({ok:true,displayName});
   }
   if(action==='complete')return complete(body);

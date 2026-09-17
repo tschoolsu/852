@@ -6,6 +6,10 @@ import { finished } from 'node:stream/promises';
 import { Pool, type PoolClient, type QueryResult } from 'pg';
 
 type BindValue = unknown;
+type DatabaseTransaction = {
+  first:<Row>(sql:string,...values:BindValue[])=>Promise<Row|null>;
+  run:(sql:string,...values:BindValue[])=>Promise<QueryResult>;
+};
 
 function placeholders(sql: string) {
   let index = 0;
@@ -103,6 +107,23 @@ class NodeDatabase {
       client.release();
     }
   }
+
+  async transaction<T>(operation:(tx:DatabaseTransaction)=>Promise<T>):Promise<T> {
+    const client=await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const tx={
+        first:async<Row>(sql:string,...values:BindValue[])=>((await this.query(sql,values,client)).rows[0] as Row|undefined)??null,
+        run:(sql:string,...values:BindValue[])=>this.query(sql,values,client),
+      };
+      const value=await operation(tx);
+      await client.query('COMMIT');
+      return value;
+    } catch(error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {client.release();}
+  }
 }
 
 function storagePath(key: string) {
@@ -152,6 +173,10 @@ class NodeFiles {
 
 let database: NodeDatabase | undefined;
 let files: NodeFiles | undefined;
+
+export function inTransaction<T>(operation:(tx:DatabaseTransaction)=>Promise<T>):Promise<T> {
+  return (database ??= new NodeDatabase()).transaction(operation);
+}
 
 export const env = new Proxy<Record<string, unknown>>(
   {},

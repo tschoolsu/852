@@ -1,19 +1,22 @@
 import { zipStream, type ZipEntry } from '@/lib/zip';
 import { accessSettings } from '@/lib/access-settings';
+import { allowAction } from '@/lib/action-limit';
 import { authPost } from '@/lib/local-auth';
 import { adminGet, adminPost } from '@/lib/admin';
-import { env } from '@/lib/node-env';
+import { env, inTransaction } from '@/lib/node-env';
 import { readJsonBody } from '@/lib/request-body';
-import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, isAdminEmail, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, snapshot, validSchoolEmail, type Resource } from '@/lib/cloud';
+import { all, appOrigin, audit, clearCookie, currentUser, first, httpError, isAdminEmail, json, loadAccess, now, publicResource, requireCsrf, requireUser, run, safeUrl, sendShareNotification, sessionHash, validSchoolEmail, type Resource } from '@/lib/cloud';
 
 type Context={params:Promise<{path?:string[]}>};
+type Auth=Awaited<ReturnType<typeof requireUser>>;
+type Access=Awaited<ReturnType<typeof loadAccess>>;
 const textValue=(value:unknown)=>typeof value==='string'?value:'';
 const title=(value:unknown)=>{const v=textValue(value).trim().slice(0,180); if(!v) throw httpError(400,'請輸入名稱。'); return v;};
 const description=(value:unknown)=>textValue(value).trim().slice(0,4000);
 const role=(value:unknown)=>value==='editor'?'editor':'viewer';
 
-async function resourceAccess(request:Request,id:string,share='',allowTrashed=false,auth?:Awaited<ReturnType<typeof requireUser>>) {
-  const {user}=auth || await requireUser(request),access=await loadAccess(user,share);
+async function resourceAccess(request:Request,id:string,share='',allowTrashed=false,auth?:Auth,preloadedAccess?:Access) {
+  const {user}=auth || await requireUser(request),access=preloadedAccess||await loadAccess(user,share);
   const resource=access.map.get(id); if(!resource || (!allowTrashed && access.hiddenByTrash(resource))) throw httpError(404,'找不到這個項目。');
   const permission=access.permission(resource); if(!permission) throw httpError(403,'你目前沒有此項目的存取權');
   return {user,resource,permission,access};
@@ -36,6 +39,16 @@ function assertDestination(resource:Resource,parentId:string|null,access:Awaited
     if(cursor.parent_id&&!access.map.has(cursor.parent_id))throw httpError(409,'目的地資料夾結構異常。');
     cursor=cursor.parent_id?access.map.get(cursor.parent_id):undefined;
   }
+}
+
+async function saveRevision(previous:Resource,next:Resource,updateSql:string,values:unknown[],event:string,actorId:string,details:Record<string,unknown>={}) {
+  await inTransaction(async tx=>{
+    const changed=await tx.first<{id:string}>(updateSql,...values,previous.id,previous.revision);
+    if(!changed)throw httpError(409,'項目已被其他人修改，請重新整理後再試。');
+    await tx.run(`INSERT INTO resource_versions(resource_id,revision,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,parent_id,event,actor_id,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,next.id,next.revision,next.kind,next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,next.parent_id,event,actorId,now());
+    await tx.run('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',actorId,`resource.${event}`,next.id,JSON.stringify(details),now());
+  });
 }
 
 async function parseBody(request:Request) {
@@ -101,6 +114,7 @@ export async function POST(request:Request,context:Context) {
     if(path[0]==='logout') {
       const auth=await requireUser(request),body=await parseBody(request); requireCsrf(request,auth.csrf,textValue(body.csrf));
       const raw=(request.headers.get('cookie')||'').match(/(?:^|;\s*)tfiles_session=([^;]+)/)?.[1]; if(raw) await run('DELETE FROM sessions WHERE token_hash=?',await sessionHash(decodeURIComponent(raw)));
+      await audit(auth.user.id,'auth.logout',auth.user.id);
       return json({ok:true},200,{'Set-Cookie':clearCookie('tfiles_session')});
     }
     if(path[0]==='selection') return await selection(request);
@@ -117,48 +131,68 @@ async function createResource(request:Request) {
   if(form.has('access')){let value;try{value=JSON.parse(textValue(form.get('access')));}catch{throw httpError(400,'存取權設定格式錯誤。');}settings=await accessSettings(value,auth.user.id);}
   if(!['file','link','folder'].includes(kind)) throw httpError(400,'未知的項目類型。');
   if(parentId) { const parentAccess=await resourceAccess(request,parentId,'',false,auth); if(parentAccess.resource.kind!=='folder') throw httpError(400,'目的地不是資料夾。'); assertEditor(parentAccess.permission); }
-  const id=crypto.randomUUID(),created=now(); let storageKey:string|null=null,originalName:string|null=null,mimeType:string|null=null,sizeBytes:number|null=null,url:string|null=null;
+  const id=crypto.randomUUID(),created=now(); let storageKey:string|null=null,originalName:string|null=null,mimeType:string|null=null,sizeBytes:number|null=null,url:string|null=null,file:File|null=null;
   if(kind==='link') url=safeUrl(textValue(form.get('url')));
   if(kind==='file') {
-    const file=form.get('file'); if(!(file instanceof File) || file.size===0) throw httpError(400,'請選擇檔案。');
+    const selected=form.get('file'); if(!(selected instanceof File) || selected.size===0) throw httpError(400,'請選擇檔案。');
+    file=selected;
     if(file.size>100*1024*1024) throw httpError(413,'免費雲端版本單一檔案最多 100 MB。');
     storageKey=`files/${id}/${crypto.randomUUID()}`; originalName=file.name.slice(0,240); mimeType=file.type || 'application/octet-stream'; sizeBytes=file.size;
-    await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType},customMetadata:{originalName}});
   }
   const resource:Resource={id,kind:kind as Resource['kind'],title:title(form.get('title') || (kind==='file'?originalName:'')),description:description(form.get('description')),
     url,storage_key:storageKey,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,owner_id:auth.user.id,parent_id:parentId,access_level:settings?.level||'private',revision:1,trashed_at:null,created_at:created,updated_at:created};
-  await env.DB.batch([env.DB.prepare(`INSERT INTO resources(id,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,owner_id,parent_id,access_level,revision,trashed_at,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(resource.id,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,
-    resource.owner_id,resource.parent_id,resource.access_level,1,null,created,created),...(settings?.statements(id)||[])]);
-  await snapshot(resource,'created',auth.user.id); await audit(auth.user.id,`resource.${kind}_created`,id,{parentId}); return json({ok:true,id,url:`${appOrigin(request)}/s/${id}`},201);
+  const statement=(sql:string,...values:unknown[])=>env.DB.prepare(sql).bind(...values);
+  try {
+    if(file&&storageKey)await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType||'application/octet-stream'},customMetadata:{originalName:originalName||''}});
+    await env.DB.batch([statement(`INSERT INTO resources(id,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,owner_id,parent_id,access_level,revision,trashed_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,resource.id,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,
+      resource.owner_id,resource.parent_id,resource.access_level,1,null,created,created),...(settings?.statements(id)||[]),
+      statement(`INSERT INTO resource_versions(resource_id,revision,kind,title,description,url,storage_key,original_name,mime_type,size_bytes,parent_id,event,actor_id,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,id,1,resource.kind,resource.title,resource.description,resource.url,resource.storage_key,resource.original_name,resource.mime_type,resource.size_bytes,parentId,'created',auth.user.id,created),
+      statement('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',auth.user.id,`resource.${kind}_created`,id,JSON.stringify({parentId}),created)]);
+  } catch(error) {
+    if(storageKey)try{await env.FILES.delete(storageKey);}catch(cleanupError){console.error('Failed to remove uncommitted file',cleanupError);}
+    throw error;
+  }
+  return json({ok:true,id,url:`${appOrigin(request)}/s/${id}`},201);
 }
 
-async function mutateResource(request:Request,id:string) {
-  const auth=await requireUser(request),contentType=request.headers.get('content-type')||'';
+async function mutateResource(request:Request,id:string,known?:{auth:Auth;access:Access;body:Record<string,unknown>}) {
+  const auth=known?.auth||await requireUser(request),contentType=request.headers.get('content-type')||'';
   let body:Record<string,unknown>,file:File|null=null;
-  if(contentType.includes('multipart/form-data')) { const f=await request.formData(); body=Object.fromEntries(f.entries()); const value=f.get('file'); file=value instanceof File?value:null; }
+  if(known)body=known.body;
+  else if(contentType.includes('multipart/form-data')) { const f=await request.formData(); body=Object.fromEntries(f.entries()); const value=f.get('file'); file=value instanceof File?value:null; }
   else body=await request.json() as Record<string,unknown>;
   requireCsrf(request,auth.csrf,textValue(body.csrf)); const operation=textValue(body.operation) || 'edit';
-  const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation),auth),resource=state.resource;
+  const share=textValue(body.share),state=await resourceAccess(request,id,share,['restore','delete'].includes(operation),auth,known?.access),resource=state.resource;
   if(operation==='access-config'){
     assertEditor(state.permission);const settings=await accessSettings(body.access,resource.owner_id);
-    await env.DB.batch([env.DB.prepare('UPDATE resources SET access_level=?,updated_at=? WHERE id=?').bind(settings.level,now(),id),...settings.statements(id)]);
-    await audit(auth.user.id,'share.access_configured',id,{level:settings.level});
+    await env.DB.batch([env.DB.prepare('UPDATE resources SET access_level=?,updated_at=? WHERE id=?').bind(settings.level,now(),id),...settings.statements(id),
+      env.DB.prepare('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)').bind(auth.user.id,'share.access_configured',id,JSON.stringify({previousLevel:resource.access_level,level:settings.level}),now())]);
     return json({ok:true,url:`${appOrigin(request)}/s/${id}`});
   }
   if(operation==='edit') {
     assertEditor(state.permission); const nextRevision=resource.revision+1; let storageKey=resource.storage_key,originalName=resource.original_name,mimeType=resource.mime_type,sizeBytes=resource.size_bytes;
-    if(resource.kind==='file' && file?.size) { if(file.size>100*1024*1024) throw httpError(413,'免費雲端版本單一檔案最多 100 MB。'); storageKey=`files/${id}/${crypto.randomUUID()}`; originalName=file.name.slice(0,240); mimeType=file.type||'application/octet-stream'; sizeBytes=file.size; await env.FILES.put(storageKey,file.stream(),{httpMetadata:{contentType:mimeType},customMetadata:{originalName}}); }
+    const replacement=resource.kind==='file'&&file?.size?file:null;
+    if(replacement) { if(replacement.size>100*1024*1024) throw httpError(413,'免費雲端版本單一檔案最多 100 MB。'); storageKey=`files/${id}/${crypto.randomUUID()}`; originalName=replacement.name.slice(0,240); mimeType=replacement.type||'application/octet-stream'; sizeBytes=replacement.size; }
     const next={...resource,title:title(body.title),description:description(body.description),url:resource.kind==='link'?safeUrl(textValue(body.url)):resource.url,
       storage_key:storageKey,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,revision:nextRevision,updated_at:now()};
-    await run('UPDATE resources SET title=?,description=?,url=?,storage_key=?,original_name=?,mime_type=?,size_bytes=?,revision=?,updated_at=? WHERE id=?',next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,nextRevision,next.updated_at,id);
-    await snapshot(next,'updated',auth.user.id,nextRevision); await audit(auth.user.id,'resource.updated',id,{revision:nextRevision}); return json({ok:true});
+    try {
+      if(replacement&&storageKey)await env.FILES.put(storageKey,replacement.stream(),{httpMetadata:{contentType:mimeType||'application/octet-stream'},customMetadata:{originalName:originalName||''}});
+      await saveRevision(resource,next,'UPDATE resources SET title=?,description=?,url=?,storage_key=?,original_name=?,mime_type=?,size_bytes=?,revision=?,updated_at=? WHERE id=? AND revision=? RETURNING id',
+        [next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,nextRevision,next.updated_at],'updated',auth.user.id,{revision:nextRevision});
+    } catch(error) {
+      if(replacement&&storageKey)try{await env.FILES.delete(storageKey);}catch(cleanupError){console.error('Failed to remove uncommitted replacement',cleanupError);}
+      throw error;
+    }
+    return json({ok:true});
   }
   if(operation==='move') {
     assertEditor(state.permission); const parentId=textValue(body.parentId)||null;
     assertDestination(resource,parentId,state.access);
-    const next={...resource,parent_id:parentId,revision:resource.revision+1,updated_at:now()}; await run('UPDATE resources SET parent_id=?,revision=?,updated_at=? WHERE id=?',parentId,next.revision,next.updated_at,id);
-    await snapshot(next,'moved',auth.user.id,next.revision); await audit(auth.user.id,'resource.moved',id,{parentId}); return json({ok:true});
+    const next={...resource,parent_id:parentId,revision:resource.revision+1,updated_at:now()};
+    await saveRevision(resource,next,'UPDATE resources SET parent_id=?,revision=?,updated_at=? WHERE id=? AND revision=? RETURNING id',
+      [parentId,next.revision,next.updated_at],'moved',auth.user.id,{parentId}); return json({ok:true});
   }
   if(operation==='trash') {
     assertEditor(state.permission); const access=state.access; const subtree=new Set<string>([id]); let changed=true;
@@ -176,23 +210,53 @@ async function mutateResource(request:Request,id:string) {
   }
   if(operation==='member-add') {
     assertEditor(state.permission); const query=textValue(body.recipient).trim(); let users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND LOWER(email)=LOWER(?)",query);
-    if(!users.length)users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND LOWER(display_name)=LOWER(?) LIMIT 2",query); if(users.length!==1||users[0].id===resource.owner_id||!validSchoolEmail(users[0].email))throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
-    await run('INSERT INTO resource_members(resource_id,user_id,role) VALUES(?,?,?) ON CONFLICT(resource_id,user_id) DO UPDATE SET role=excluded.role',id,users[0].id,role(body.role));
-    await run("UPDATE resources SET updated_at=? WHERE id=?",now(),id); await audit(auth.user.id,'share.member_updated',id,{recipient:users[0].email,role:role(body.role)});
-    const notification=await sendShareNotification(request,{recipient:users[0].email,recipientName:users[0].display_name,senderName:auth.user.display_name,resourceTitle:resource.title,permission:role(body.role)});
+    if(!users.length&&!query.includes('@'))users=await all<{id:string;email:string;display_name:string}>("SELECT id,email,display_name FROM users WHERE status='active' AND LOWER(display_name)=LOWER(?) LIMIT 2",query); if(users.length!==1||users[0].id===resource.owner_id||!validSchoolEmail(users[0].email))throw httpError(400,'找不到唯一且已登入過本系統的學校成員。');
+    const nextRole=role(body.role),recipient=users[0];
+    const changed=await inTransaction(async tx=>{
+      if(!await tx.first('SELECT id FROM resources WHERE id=? FOR UPDATE',id))throw httpError(404,'找不到這個項目。');
+      const existing=await tx.first<{role:string}>('SELECT role FROM resource_members WHERE resource_id=? AND user_id=?',id,recipient.id);
+      if(existing?.role===nextRole)return false;
+      await tx.run('INSERT INTO resource_members(resource_id,user_id,role) VALUES(?,?,?) ON CONFLICT(resource_id,user_id) DO UPDATE SET role=excluded.role',id,recipient.id,nextRole);
+      await tx.run('UPDATE resources SET updated_at=? WHERE id=?',now(),id);
+      await tx.run('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',auth.user.id,'share.member_updated',id,JSON.stringify({recipient:recipient.email,previousRole:existing?.role||null,role:nextRole}),now());
+      return true;
+    });
+    if(!changed)return json({ok:true,notificationSent:false});
+    const mayNotify=await allowAction('share-mail-pair',`${auth.user.id}:${recipient.id}`,3,3600)
+      &&await allowAction('share-mail-recipient',recipient.id,20,86400)
+      &&await allowAction('share-mail-sender',auth.user.id,30,86400);
+    const notification=mayNotify
+      ?await sendShareNotification(request,{recipient:recipient.email,recipientName:recipient.display_name,senderName:auth.user.display_name,resourceTitle:resource.title,permission:nextRole})
+      :{sent:false,reason:'通知寄送次數已達上限'};
     await audit(auth.user.id,notification.sent?'share.notification_sent':'share.notification_skipped',id,{recipient:users[0].email,reason:notification.reason});
     return json({ok:true,notificationSent:notification.sent,warning:notification.sent?undefined:`共享已完成；通知信未寄出（${notification.reason}）。`});
   }
-  if(operation==='member-remove') { assertEditor(state.permission); if(textValue(body.userId)===resource.owner_id)throw httpError(403,'擁有者固定保有完整權限。'); await run('DELETE FROM resource_members WHERE resource_id=? AND user_id=?',id,textValue(body.userId)); return json({ok:true}); }
-  if(operation==='access-level') { assertEditor(state.permission); const level=body.level==='members'?'members':'private'; await run('UPDATE resources SET access_level=?,updated_at=? WHERE id=?',level,now(),id); return json({ok:true}); }
+  if(operation==='member-remove') {
+    assertEditor(state.permission); const userId=textValue(body.userId); if(userId===resource.owner_id)throw httpError(403,'擁有者固定保有完整權限。');
+    await inTransaction(async tx=>{
+      const removed=await tx.first<{role:string}>('DELETE FROM resource_members WHERE resource_id=? AND user_id=? RETURNING role',id,userId);
+      if(removed)await tx.run('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',auth.user.id,'share.member_removed',id,JSON.stringify({userId,previousRole:removed.role}),now());
+    });
+    return json({ok:true});
+  }
+  if(operation==='access-level') {
+    assertEditor(state.permission); const level=body.level==='members'?'members':'private';
+    if(resource.access_level!==level)await inTransaction(async tx=>{
+      const changed=await tx.first<{id:string}>('UPDATE resources SET access_level=?,updated_at=? WHERE id=? AND access_level=? RETURNING id',level,now(),id,resource.access_level);
+      if(!changed)throw httpError(409,'存取權已被其他人修改，請重新整理後再試。');
+      await tx.run('INSERT INTO audit_log(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',auth.user.id,'share.access_level_changed',id,JSON.stringify({previousLevel:resource.access_level,level}),now());
+    });
+    return json({ok:true});
+  }
   if(operation==='link-generate') { return json({ok:true,url:`${appOrigin(request)}/s/${id}`}); }
-  if(operation==='link-revoke') { assertEditor(state.permission); await run('DELETE FROM share_links WHERE resource_id=?',id); return json({ok:true}); }
+  if(operation==='link-revoke') { assertEditor(state.permission); await run('DELETE FROM share_links WHERE resource_id=?',id); await audit(auth.user.id,'share.legacy_link_revoked',id); return json({ok:true}); }
   if(operation==='version-restore') {
     assertEditor(state.permission); const revision=Number(body.revision),v=await first<Resource & {revision:number}>('SELECT * FROM resource_versions WHERE resource_id=? AND revision=?',id,revision); if(!v)throw httpError(404,'找不到版本。');
     assertDestination(resource,v.parent_id,state.access);
     const next={...resource,title:v.title,description:v.description,url:v.url,storage_key:v.storage_key,original_name:v.original_name,mime_type:v.mime_type,size_bytes:v.size_bytes,parent_id:v.parent_id,revision:resource.revision+1,updated_at:now()};
-    await run('UPDATE resources SET title=?,description=?,url=?,storage_key=?,original_name=?,mime_type=?,size_bytes=?,parent_id=?,revision=?,updated_at=? WHERE id=?',next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,next.parent_id,next.revision,next.updated_at,id);
-    await snapshot(next,'version_restored',auth.user.id,next.revision); await audit(auth.user.id,'resource.version_restored',id,{from:revision,to:next.revision}); return json({ok:true});
+    await saveRevision(resource,next,'UPDATE resources SET title=?,description=?,url=?,storage_key=?,original_name=?,mime_type=?,size_bytes=?,parent_id=?,revision=?,updated_at=? WHERE id=? AND revision=? RETURNING id',
+      [next.title,next.description,next.url,next.storage_key,next.original_name,next.mime_type,next.size_bytes,next.parent_id,next.revision,next.updated_at],
+      'version_restored',auth.user.id,{from:revision,to:next.revision}); return json({ok:true});
   }
   throw httpError(400,'未知的操作。');
 }
@@ -213,6 +277,8 @@ async function selection(request:Request) {
   const auth=await requireUser(request),body=await readJsonBody(request,64*1024);requireCsrf(request,auth.csrf,textValue(body.csrf));
   const ids=Array.isArray(body.ids)?[...new Set(body.ids.filter((id):id is string=>typeof id==='string'))]:[];
   if(!ids.length||ids.length>500)throw httpError(400,'每次請選取 1 至 500 個項目。');
+  if(!await allowAction('selection-requests',auth.user.id,20,60)
+    ||!await allowAction('selection-items',auth.user.id,1000,60,ids.length))throw httpError(429,'批次操作太頻繁，請稍後再試。');
   const operation=textValue(body.operation),share=textValue(body.share),access=await loadAccess(auth.user,share);
   if(!['download','trash','restore','delete','move','member-add','link-generate','access-level','link-revoke','access-config'].includes(operation))throw httpError(400,'未知的批次操作。');
   // Normalize parent/child selections so a folder operation never flattens or repeats its children.
@@ -220,13 +286,14 @@ async function selection(request:Request) {
   const roots=ids.filter(id=>{let r=access.map.get(id);const seen=new Set<string>([id]);while(r?.parent_id&&!seen.has(r.parent_id)){if(selected.has(r.parent_id)&&operation!=='restore')return false;seen.add(r.parent_id);r=access.map.get(r.parent_id);}return true;});
   if(operation==='download') {
     const entries:ZipEntry[]=[],seen=new Set<string>(),used=new Set<string>();let total=0;
+    const children=new Map<string,Resource[]>();for(const resource of access.resources)if(resource.parent_id){const siblings=children.get(resource.parent_id)||[];siblings.push(resource);children.set(resource.parent_id,siblings);}
     // oxlint-disable-next-line no-control-regex -- Strip unsafe ZIP path characters, including control bytes.
     const clean=(s:string)=>s.replace(/[\\/\x00-\x1f:*?"<>|]/g,'_').replace(/^\.+$/,'_').slice(0,180)||'未命名';
     const add=async(r:Resource,parentPath:string)=>{
       if(seen.has(r.id)||access.hiddenByTrash(r)||!access.permission(r))return;seen.add(r.id);
       let base=clean(r.title);if(r.kind==='file'){const ext=r.original_name?.match(/\.[^.]+$/)?.[0];if(ext&&!base.toLowerCase().endsWith(ext.toLowerCase()))base+=clean(ext);}if(r.kind==='link')base+='.url';
       let name=parentPath+base,n=2;while(used.has(name.toLowerCase()))name=parentPath+base+' ('+(n++)+')';used.add(name.toLowerCase());
-      if(r.kind==='folder'){entries.push({name:name+'/',size:0,open:async()=>new Blob([]).stream()});for(const child of access.resources.filter(x=>x.parent_id===r.id))await add(child,name+'/');}
+      if(r.kind==='folder'){entries.push({name:name+'/',size:0,open:async()=>new Blob([]).stream()});for(const child of children.get(r.id)||[])await add(child,name+'/');}
       else if(r.kind==='link'){const content=new TextEncoder().encode('[InternetShortcut]\r\nURL='+safeUrl(r.url||'')+'\r\n');entries.push({name,size:content.length,open:async()=>new Blob([content]).stream()});total+=content.length;}
       else {if(!r.storage_key)throw httpError(404,'找不到檔案內容。');const key=r.storage_key,head=await env.FILES.head(key);if(!head)throw httpError(404,'找不到檔案內容：'+r.title);total+=head.size;entries.push({name,size:head.size,open:async()=>{const object=await env.FILES.get(key);if(!object)throw new Error('檔案內容已移除');return object.body;}});}
       if(total>512*1024*1024||entries.length>10000)throw httpError(413,'此次下載超過 512 MB 或 10,000 個項目，請分批下載。');
@@ -237,7 +304,7 @@ async function selection(request:Request) {
   }
   const results=[];
   for(const id of roots){
-    try{const response=await mutateResource(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify({...body,ids:undefined})}),id);const data=await response.json() as {warning?:string;url?:string};results.push({id,ok:true,...data});}
+    try{const response=await mutateResource(request,id,{auth,access,body});const data=await response.json() as {warning?:string;url?:string};results.push({id,ok:true,...data});}
     catch(error){const e=error as Error&{publicMessage?:string};results.push({id,ok:false,error:e.publicMessage||'操作未完成，請重新整理確認。'});}
   }
   return json({results});
