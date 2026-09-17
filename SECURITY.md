@@ -15,7 +15,7 @@
 - 成功登入會產生新的隨機工作階段權杖；資料庫只保存以 `SESSION_SECRET` 計算的 HMAC 值。工作階段有效期為 7 天。
 - 工作階段 Cookie 設為 `HttpOnly`、`Secure`、`SameSite=Lax`。登出會刪除伺服器端工作階段；密碼重設及管理員重設註冊資格也會撤銷舊工作階段。
 - 已登入的資料變更要求會核對 CSRF 權杖；帳號與管理員的相關 POST 要求也會核對來源網址。未登入者不能透過分享網址讀取項目。
-- 登入與批次操作的 JSON 本文有大小限制。正式 Nginx 只接受 Cloudflare 來源的連線，並覆寫傳給應用程式的用戶端 IP 標頭；來源主機已安裝 HTTPS 憑證。Cloudflare 仍須由網域管理員對 `file.tschoolsu.org` 設定 Full (strict)，才能確認 Cloudflare 到來源的連線受到憑證驗證。
+- 登入與批次操作的 JSON 本文有大小限制。正式 Nginx 只接受 Cloudflare 來源的連線，並覆寫傳給應用程式的用戶端 IP 標頭；來源主機已安裝 HTTPS 憑證。2026-09-17 的來源站存取紀錄顯示 Cloudflare 仍使用 HTTP 連到來源；網域管理員須對 `file.tschoolsu.org` 設定 Full (strict)，才能讓這一段連線加密並驗證憑證。
 
 ## 檔案與存取權
 
