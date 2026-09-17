@@ -1,5 +1,5 @@
 import {mailConfigured,sendMail} from './mail';
-import { env } from 'cloudflare:workers';
+import { env } from './node-env';
 
 export type User = { id:string; email:string; display_name:string; role:string; status:string };
 export type Resource = {
@@ -96,6 +96,8 @@ export async function loadAccess(user:User,_shareToken='') {
   const rank=(role:string)=>role==='owner'?3:role==='editor'?2:role==='viewer'?1:0;
   function permission(resource:Resource) {
     let best=resource.owner_id===user.id?'owner':''; let current:Resource|undefined=resource; const seen=new Set<string>();
+    // Administrative access is derived from the signed-in account, never stored as a share member.
+    if(user.role==='admin' && isAdminEmail(user.email) && !best) best='editor';
     while(current && !seen.has(current.id)) {
       seen.add(current.id);
       const member=memberships.get(current.id);

@@ -7,6 +7,7 @@ if (config.smtp.host) {
     host: config.smtp.host,
     port: config.smtp.port,
     secure: config.smtp.secure,
+    requireTLS: !config.smtp.secure,
     auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined,
   });
 }
@@ -31,7 +32,7 @@ export async function sendPasswordResetEmail({ to, displayName, resetUrl }) {
 
 export async function sendShareNotificationEmail({ to,recipientName,sharerName,resourceTitle,roleLabel,resourceUrl }) {
   const subject = `${sharerName} 與你共享「${resourceTitle}」`;
-  const text = `${recipientName} 您好：\n\n${sharerName} 已與你共享「${resourceTitle}」，權限為${roleLabel}。\n${resourceUrl}\n\n請使用學校 Google 帳號登入學生會檔案管理系統。`;
+  const text = `${recipientName} 您好：\n\n${sharerName} 已與你共享「${resourceTitle}」，權限為${roleLabel}。\n${resourceUrl}\n\n請使用學校信箱及本系統的獨立密碼登入學生會檔案管理系統。`;
   if (!transporter) {
     if (!config.isProduction) {
       if (config.env !== "test") console.info(`\n[開發用共享通知] ${to}\n${subject}\n${resourceUrl}\n`);
@@ -44,7 +45,7 @@ export async function sendShareNotificationEmail({ to,recipientName,sharerName,r
     to,
     subject,
     text,
-    html: `<p>${escapeHtml(recipientName)} 您好：</p><p>${escapeHtml(sharerName)} 已與你共享「<strong>${escapeHtml(resourceTitle)}</strong>」，權限為${escapeHtml(roleLabel)}。</p><p><a href="${escapeHtml(resourceUrl)}">開啟共享內容</a></p><p>請使用學校 Google 帳號登入學生會檔案管理系統。</p>`,
+    html: `<p>${escapeHtml(recipientName)} 您好：</p><p>${escapeHtml(sharerName)} 已與你共享「<strong>${escapeHtml(resourceTitle)}</strong>」，權限為${escapeHtml(roleLabel)}。</p><p><a href="${escapeHtml(resourceUrl)}">開啟共享內容</a></p><p>請使用學校信箱及本系統的獨立密碼登入學生會檔案管理系統。</p>`,
   });
   return { delivered:true,development:false };
 }

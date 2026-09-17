@@ -7,8 +7,6 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
-  Share2,
-  FolderInput,
 } from 'lucide-react';
 import {
   UploadAccessDialog,
@@ -480,6 +478,7 @@ export function UploadQueue({
               <footer>
                 <Button
                   variant="outline"
+                  className="queue-action"
                   disabled={disabled}
                   onClick={() => picker.current?.click()}
                 >
@@ -487,18 +486,18 @@ export function UploadQueue({
                 </Button>
                 <Button
                   variant="outline"
+                  className="queue-action"
                   disabled={disabled || !selectable.length}
                   onClick={openFolder}
                 >
-                  <FolderInput />
                   加入資料夾
                 </Button>
                 <Button
                   variant="outline"
+                  className="queue-action"
                   disabled={disabled || !selectable.length}
                   onClick={openAccess}
                 >
-                  <Share2 />
                   管理存取權
                 </Button>
                 <Button

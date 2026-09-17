@@ -1,0 +1,12 @@
+[Unit]
+Description=T-Files PostgreSQL and private file backup
+
+[Service]
+Type=oneshot
+User=service
+Group=service
+WorkingDirectory=/home/service/t-files/cloud
+ExecStart=/usr/bin/node /home/service/t-files/cloud/ops/backup.mjs
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

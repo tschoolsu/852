@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env } from './node-env';
 import nodemailer from 'nodemailer';
 
 export function mailConfigured() {

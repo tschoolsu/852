@@ -1,5 +1,11 @@
 node_modules
 .git
 .env
+.env.*
+*.pem
+*.key
+**/client_secret_*.json
+**/backups/
+**/files/
 data
 npm-debug.log*
