@@ -1,8 +1,10 @@
 import { createReadStream, createWriteStream } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
+import { promisify } from 'node:util';
 import { Pool, type PoolClient, type QueryResult } from 'pg';
 
 type BindValue = unknown;
@@ -141,8 +143,21 @@ class NodeFiles {
     await mkdir(path.dirname(target), { recursive: true, mode: 0o750 });
     const source = Readable.fromWeb(body as never);
     const output = createWriteStream(target, { mode: 0o640 });
-    source.pipe(output);
-    await finished(output);
+    try {
+      source.pipe(output);
+      await finished(output);
+      if (process.env.FILE_SCAN_MODE === 'clamd') {
+        try {
+          await promisify(execFile)('/usr/bin/clamdscan', ['--fdpass', '--no-summary', target], { timeout: 180_000, maxBuffer: 1024 * 1024 });
+        } catch (error) {
+          if ((error as { code?: number }).code === 1) throw new Error('檔案未通過惡意程式掃描。');
+          throw new Error('檔案掃描服務無法使用，請稍後重試。');
+        }
+      }
+    } catch (error) {
+      await rm(target, { force: true });
+      throw error;
+    }
   }
 
   async get(key: string) {
