@@ -73,9 +73,15 @@ export async function adminGet(request: Request, url: URL) {
         const { readdir, stat } = await import('node:fs/promises');
         const path = await import('node:path');
         const entries = await readdir(process.env.BACKUP_PATH, { withFileTypes:true });
-        const files = await Promise.all(entries.filter(e=>e.isFile() && /\.(dump|sql|tar|tgz|gz)$/i.test(e.name)).map(async e=>stat(path.join(process.env.BACKUP_PATH!,e.name))));
-        const latest = files.sort((a,b)=>b.mtimeMs-a.mtimeMs)[0];
-        backup = { configured:true,latest:latest?.mtime.toISOString()||null,ageHours:latest?Math.round((Date.now()-latest.mtimeMs)/3600000):null,count:files.length };
+        const names = new Set(entries.filter(e=>e.isFile()).map(e=>e.name));
+        const complete = await Promise.all(entries.filter(e=>e.isFile() && /^t-files-.*\.json$/.test(e.name)).map(async e=>{
+          const prefix = e.name.slice(0,-5);
+          return names.has(`${prefix}.dump`) && names.has(`${prefix}.files.tar.gz`)
+            ? stat(path.join(process.env.BACKUP_PATH!,e.name)) : null;
+        }));
+        const backups = complete.filter((item):item is NonNullable<typeof item>=>item!==null);
+        const latest = backups.sort((a,b)=>b.mtimeMs-a.mtimeMs)[0];
+        backup = { configured:true,latest:latest?.mtime.toISOString()||null,ageHours:latest?Math.round((Date.now()-latest.mtimeMs)/3600000):null,count:backups.length };
       } catch { /* Missing or unreadable backup directory is reported as no verified backup. */ }
     }
     const security = await all(`SELECT action,details,created_at FROM audit_log WHERE action IN

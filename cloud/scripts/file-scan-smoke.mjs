@@ -11,7 +11,7 @@ try {
   if (!(await files.head(cleanKey))) throw new Error('Clean file was not stored');
   let rejected = false;
   try { await files.put(alertKey, new Blob([eicar]).stream()); }
-  catch { rejected = true; }
+  catch (error) { rejected = /未通過惡意程式掃描/.test(String(error)); }
   if (!rejected || await files.head(alertKey)) throw new Error('Test signature was not rejected and removed');
   console.log('File scan smoke test passed');
 } finally {
