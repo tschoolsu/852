@@ -94,8 +94,21 @@ try{
   const events=(await db.query("SELECT action FROM audit_log WHERE target_id=$1 AND action IN ('share.member_removed','share.access_level_changed')",[fileId])).rows.map(row=>row.action);
   assert(events.includes('share.member_removed')&&events.includes('share.access_level_changed'),'Permission changes missing audit records');
 
-  const simultaneous=await Promise.all(['A','B'].map(title=>mutate(fileId,'edit',{title,description:'',url:''})));
-  assert(simultaneous.every(response=>[200,409].includes(response.status)),'Concurrent edit returned unexpected result');
+  const lock=await db.connect();let simultaneous;
+  try {
+    await lock.query('BEGIN');await lock.query('SELECT id FROM resources WHERE id=$1 FOR UPDATE',[fileId]);
+    const pending=Promise.all(['A','B'].map(title=>mutate(fileId,'edit',{title,description:'',url:''})));
+    let blocked=0;
+    for(let i=0;i<50;i++){
+      blocked=Number((await db.query("SELECT COUNT(*) AS count FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'UPDATE resources SET title=%'")).rows[0].count);
+      if(blocked>=2)break;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    assert(blocked>=2,'Concurrent edits did not reach the guarded update');
+    await lock.query('COMMIT');
+    simultaneous=await pending;
+  } finally {if(!lock.released){try{await lock.query('ROLLBACK');}catch{}lock.release();}}
+  assert(simultaneous.map(response=>response.status).sort().join(',')==='200,409','Concurrent edit did not return one success and one conflict');
   const current=(await db.query('SELECT title,revision FROM resources WHERE id=$1',[fileId])).rows[0];
   const latest=(await db.query('SELECT title FROM resource_versions WHERE resource_id=$1 AND revision=$2',[fileId,current.revision])).rows[0];
   assert(current.title===latest?.title,'Current content differs from its version');
