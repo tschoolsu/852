@@ -1,62 +1,53 @@
 # T-Files 資安政策
 
-本專案以 OWASP ASVS 5.0 與 OWASP Cheat Sheet Series 作為基準。這份文件描述目前已實作的控制、營運要求與仍需在正式上線前完成的工作；它不是第三方資安認證。
+本文件描述目前 `cloud/` 正式網站程式的安全設計與待完成工作。正式網站為 `https://file.tschoolsu.org/`，目前使用 Nginx、Node.js、PostgreSQL 與主機上的私有檔案目錄。本文以 OWASP 建議作為檢查參考，不代表已通過資安認證。
 
-## 帳號與 Google 登入
+## 帳號登入
 
-- 僅接受完整網域為 `tschool.tp.edu.tw` 的電子郵件，不接受相似或子網域字串混淆。
-- 每次登入都透過 Google OpenID Connect 驗證帳號簽章、audience、nonce、已驗證信箱及 Google Workspace `hd` 網域；顯示名稱直接同步 Google `name` 宣告。
-- OAuth 授權碼流程使用 PKCE、一次性隨機 `state` 與 HttpOnly SameSite Cookie 防止授權碼攔截及登入 CSRF。驗證完成後不保存 Google access token 或 refresh token。
-- 系統不會接觸、複製或保存 Google 密碼；Google 帳號的密碼、MFA 與復原流程由學校 Google Workspace 管理。
-- 登入端點有速率限制，第一次成功登入才會自動建立站內帳號。
-
-參考：[OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)。
+- 帳號使用獨立密碼登入，不使用學校或 Google 密碼。僅接受網域恰好為 `tschool.tp.edu.tw` 的學校信箱。
+- 註冊時由 Brevo SMTP 寄送驗證及設定密碼連結；使用者可自行設定顯示名稱。密碼長度為 8 至 128 個字元，以隨機鹽值及 PBKDF2-SHA-256 雜湊保存，不保存明文密碼。
+- 忘記密碼時寄送一次性連結。連結有效 30 分鐘，資料庫只保存權杖雜湊；完成密碼設定後會撤銷該帳號既有工作階段。
+- 登入與寄信請求設有依 IP、信箱計算的頻率限制。註冊模式可設為立即啟用或等待管理員審核；只有啟用中的帳號能登入。
+- 管理員資格同時檢查帳號角色與設定中的管理員信箱。重設成員註冊資格會撤銷其工作階段與密碼憑證，但保留原帳號 ID、檔案及擁有者關係。
 
 ## 工作階段與請求保護
 
-- 工作階段 ID 使用 256 位元安全亂數產生，資料庫只保存經伺服器密鑰 HMAC 處理的值。
-- Cookie 使用 `HttpOnly`、`SameSite=Lax`；正式環境強制 `Secure`。
-- 登入後建立全新的工作階段，登出會從伺服器端刪除；工作階段預設 7 天到期。
-- 所有會改變資料的表單都驗證 CSRF 權杖。
-- 使用 Helmet 設定 Content Security Policy、禁止 iframe 嵌入、MIME sniffing 及 Referrer 洩漏。
-- 正式環境必須使用 HTTPS。
+- 成功登入會產生新的隨機工作階段權杖；資料庫只保存以 `SESSION_SECRET` 計算的 HMAC 值。工作階段有效期為 7 天。
+- 工作階段 Cookie 設為 `HttpOnly`、`Secure`、`SameSite=Lax`。登出會刪除伺服器端工作階段；密碼重設及管理員重設註冊資格也會撤銷舊工作階段。
+- 已登入的資料變更要求會核對 CSRF 權杖；帳號與管理員的相關 POST 要求也會核對來源網址。未登入者不能透過分享網址讀取項目。
+- 登入與批次操作的 JSON 本文有大小限制。正式 Nginx 只接受 Cloudflare 來源的連線，並覆寫傳給應用程式的用戶端 IP 標頭。
 
-參考：[OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)。
+## 檔案與存取權
 
-## 檔案與存取控制
+- 所有已登入的學校成員可在清單及搜尋中看到項目的基本資料，包括名稱、類型、擁有者、時間、說明及檔案大小。看見基本資料不等於可開啟內容。
+- 擁有者固定有完整權限。指定成員可設為「可檢視」或「可編輯」；「所有已登入成員」提供檢視權限。資料夾權限可由子項目繼承。可編輯者可修改、移動、刪除及管理共享設定；可檢視者可開啟或下載。
+- 固定分享網址只用於前往項目，不自行授予權限。開啟、下載、進入資料夾和變更資料時，伺服器會重新檢查登入狀態與存取權；無權限者不能取得檔案內容或連結網址。
+- 管理員在伺服器端取得其他成員項目的編輯權限，不會被加入公開的共享成員名單。管理員開啟他人項目時會留下稽核紀錄。
+- 新上傳的單一檔案上限為 100 MB，格式不限。實際檔案以隨機儲存鍵保存在非網站公開目錄；下載由權限檢查後的處理器提供，使用附件下載及 `nosniff`。版本還原也會檢查目的地權限及資料夾循環。
+- **目前未實作惡意檔案掃描或隔離流程。**允許任意格式上傳時，仍須將下載檔案視為可能有風險。
 
-- 所有權限在伺服器端逐次驗證；隱藏按鈕不被視為安全控制。
-- 未知或錯誤的權限值會安全地降級為「僅自己」。
-- 使用者提供的檔名只作為下載名稱；實際儲存鍵為隨機 UUID。
-- 本機檔案放在網站公開目錄之外。正式環境可存於不公開的 S3/R2 Bucket。
-- 檔案只透過已驗證權限的下載處理器傳送，並強制使用附件下載及 `X-Content-Type-Options: nosniff`，不在網站內執行或預覽。
-- 系統業務需求允許任意檔案格式，因此沒有採用副檔名白名單。這是與 OWASP 一般上傳建議不同的明確風險決策；隔離儲存與強制下載用來降低風險。
-- 檔案庫沒有總容量配額。單檔預設限制 1 GiB，避免磁碟耗盡型阻斷服務，可由環境設定調整。
+## 資料與紀錄
 
-參考：[OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)、[OWASP ASVS 5.0 File Upload and Content](https://cornucopia.owasp.org/taxonomy/asvs-5.0/05-file-handling/02-file-upload-and-content)。
+- PostgreSQL 保存帳號、密碼雜湊、工作階段雜湊、權限、項目中繼資料、版本紀錄及稽核紀錄；檔案內容保存在主機私有檔案目錄。資料庫操作使用參數化查詢。
+- 稽核紀錄目前涵蓋密碼登入成功或失敗、頻率限制、寄信結果、建立與下載項目、部分編輯與共享操作、移動、刪除、版本還原及部分管理員操作。紀錄可能包含帳號信箱、IP、項目 ID 與操作時間，應限制管理員與主機維護者的存取。
+- 管理員頁面可查看成員、操作紀錄、儲存空間及備份目錄的檔案時間。備份頁面只能顯示檔案是否存在及其時間，**不能證明備份可還原**。
+- 不應將 `.env`、SMTP 憑證、資料庫連線字串、工作階段權杖、驗證連結、資料庫備份或上傳檔案提交至 Git。稽核紀錄目前沒有完整的保留期限及自動清理政策。
 
-## 資料處理與紀錄
+## 上線前工作與持續檢查
 
-- SQL 查詢一律使用參數化敘述。
-- EJS 預設 HTML 編碼用於所有使用者輸入；連結只接受 `http` 與 `https`。
-- 稽核紀錄包含 Google 登入成功／失敗、登出、上傳、下載、建立連結、版本還原、移動、刪除、權限修改及帳號核准。
-- 稽核紀錄不保存 Google 權杖、工作階段權杖或 SMTP 憑證。
-- `.env`、資料庫與上傳檔案不得提交到 Git。
+網站已對外提供服務。以下項目應在下一次正式版本驗收時優先處理，並持續複查：
 
-## 正式上線前必做
+1. 為 Cloudflare 到來源主機的連線設定 HTTPS／TLS；目前來源站 Nginx 僅監聽 HTTP。驗證 Cloudflare 來源限制、正式網域及反向代理設定。
+2. 對 PostgreSQL、檔案內容、版本檔案與稽核紀錄建立受保護的定期備份，實際演練還原，並設定保留期限與容量告警。
+3. 對任意格式上傳增加惡意檔案掃描或隔離機制；在掃描完成前評估是否暫停提供下載。
+4. 確認 Brevo 寄件者、SMTP TLS、驗證信與忘記密碼信的送達；定期輪替 `SESSION_SECRET`、SMTP key 及資料庫憑證，並撤銷曾外洩的憑證。
+5. 補齊重要操作的稽核覆蓋、紀錄保留期限與異常告警；定期檢查管理員名單、管理員額外驗證方式及最小權限。
+6. 定期檢查相依套件漏洞，針對檔案上傳、權限繼承、批次操作、版本還原、CSRF、登入限流與工作階段進行測試。
 
-1. 設定 HTTPS、長度足夠且唯一的 `SESSION_SECRET`，並確認反向代理設定正確。
-2. 設定 SMTP 專用帳號與應用程式密碼，測試寄送及退信處理。
-3. 使用私有 S3/R2 Bucket，將金鑰限制在單一 Bucket 所需的最小權限，並設定金鑰輪替程序。
-4. 對 SQLite 資料庫、稽核紀錄及檔案中繼資料建立加密備份與還原演練。
-5. 接入防毒或沙箱掃描服務；掃描完成前將新上傳檔案標記為不可下載。任意格式上傳在沒有惡意程式掃描時仍有剩餘風險。
-6. 在 Google Cloud 完成 OAuth 品牌、用戶端與正式 HTTPS 重新導向 URI 設定；用戶端密鑰只放在部署環境的秘密設定。
-7. 由學校 Google Workspace 為管理員帳號強制 MFA，並定期檢查管理員名單。
-8. 設定監控、磁碟及雲端費用告警，定期檢查稽核紀錄和相依套件漏洞。
-9. 進行獨立滲透測試，特別驗證 IDOR、權限變更、上傳繞過、CSRF、工作階段固定與 OAuth 登入流程。
+## 漏洞回報
 
-## 漏洞回報與應變
+請不要在公開 Issue、討論區或聊天訊息貼出密碼、憑證、個資、實際檔案內容或可直接利用的細節。若儲存庫已啟用 GitHub 私密漏洞回報，請使用 [私密回報頁](https://github.com/tschoolsu/852/security/advisories/new)；若頁面不可用，先透過學生會數位部既有的私人聯絡管道聯絡維護者。若不知道聯絡方式，可開一則**不含漏洞細節**的 Issue，請維護者提供私密提交方式。
 
-發現疑似漏洞時，不要在公開 Issue 張貼個資、權杖、密碼或可直接利用的細節。先停用受影響功能或憑證、保存必要稽核紀錄，通知學生會數位部負責人，再以私密管道提供重現步驟。
+回報時請提供受影響功能、重現步驟、預期與實際結果、影響範圍，以及必要的去識別化證據。請勿為了驗證問題而存取、下載或修改他人的資料。維護者收到回報後應先限制影響、保存必要紀錄，修補並驗證問題；若涉及憑證或資料外洩，應撤銷受影響的工作階段與憑證，評估通知受影響成員。
 
-確認事件後應立即撤銷外洩工作階段或金鑰、修補根因、檢查是否有未授權存取、通知受影響使用者，並留下不含敏感資料的事件紀錄與改善項目。
+參考：[OWASP 身分驗證](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[工作階段管理](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)、[檔案上傳](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)與 [GitHub 私密漏洞回報說明](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately)。
