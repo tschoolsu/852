@@ -1,0 +1,13 @@
+[Unit]
+Description=T-Files PostgreSQL and private file backup
+
+[Service]
+Type=oneshot
+User=service
+Group=service
+WorkingDirectory=/home/service/tpass-file
+ExecStart=/usr/bin/bash /home/service/tpass-file/ops/backup-with-pm2.sh
+TimeoutStartSec=20min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
