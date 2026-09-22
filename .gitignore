@@ -1,5 +1,13 @@
 node_modules/
 .env
+.env.*
+!.env.example
+.next/
+dist/
+work/
+*.tsbuildinfo
+next-env.d.ts
+/src/generated/
 data/
 coverage/
 npm-debug.log*

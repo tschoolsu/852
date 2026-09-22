@@ -1,0 +1,2 @@
+# Prisma Migrate datasource provider
+provider = "postgresql"

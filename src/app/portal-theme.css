@@ -1,0 +1,283 @@
+/* T-Files visual language based on the TSchool service portal. Layout stays in globals.css. */
+:root {
+  --background: oklch(0.9865 0.0041 121.6);
+  --foreground: oklch(0.2404 0.0045 196.9);
+  --card: oklch(1.0000 0.0000 89.9);
+  --ink: oklch(0.2404 0.0045 196.9);
+  --muted-ink: oklch(0.5191 0.0119 173.9);
+  --line: oklch(0.8908 0.0101 155.1);
+  --primary: oklch(0.2404 0.0045 196.9);
+  --navy: oklch(0.2404 0.0045 196.9);
+  --blue: oklch(0.4599 0.0981 157.7);
+  --pale: oklch(0.9587 0.0274 150.4);
+  --portal-mint: oklch(0.9496 0.0314 154.2);
+  --portal-peach: oklch(0.9625 0.0277 71.0);
+  --portal-lavender: oklch(0.9457 0.0257 295.6);
+  --portal-outline: oklch(0.2769 0.0057 196.8);
+}
+
+html, body { background: var(--background); }
+button, input, textarea, select { color: var(--ink); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid oklch(0.6738 0.1237 157.5);
+  outline-offset: 2px;
+}
+
+.brand-mark, .loading-mark {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 10px;
+  background: var(--portal-outline);
+  box-shadow: 3px 3px 0 oklch(0.8286 0.0886 152.3);
+}
+.brand strong { font-weight: 800; letter-spacing: -.025em; }
+.brand small, .account small { color: var(--muted-ink); }
+.eyebrow { color: var(--blue); }
+
+/* Sign-in, registration, and password recovery share the same split layout. */
+.login-intro {
+  color: var(--ink);
+  background-color: oklch(0.9837 0.0078 139.4);
+  background-image: radial-gradient(oklch(0.9096 0.0184 155.8) 1px, transparent 1px);
+  background-size: 22px 22px;
+  border-right: 1.5px solid var(--portal-outline);
+}
+.login-intro h1 { font-weight: 850; letter-spacing: -.055em; }
+.login-intro p { color: oklch(0.4638 0.0216 160.4); }
+.login-intro small { color: oklch(0.5233 0.0229 154.5); }
+.brand.light .brand-mark { background: var(--portal-outline); color: oklch(1.0000 0.0000 89.9); }
+.login-panel { background: oklch(1.0000 0.0000 89.9); }
+.login-card {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 16px;
+  box-shadow: 5px 5px 0 var(--portal-outline);
+}
+.login-card h2 { font-weight: 800; letter-spacing: -.035em; }
+.login-card .form-stack input {
+  border: 1.5px solid oklch(0.5879 0.0131 153.5);
+  border-radius: 9px;
+  background: oklch(1.0000 0.0000 89.9);
+}
+.login-card .form-stack input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px oklch(0.7928 0.0999 156.4 / 0.400); }
+.login-card .form-stack > button[type="submit"] {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 9px;
+  background: var(--portal-outline);
+  color: oklch(1.0000 0.0000 89.9);
+  box-shadow: 3px 3px 0 oklch(0.8286 0.0886 152.3);
+}
+.login-card .form-stack > button[type="submit"]:hover { background: oklch(0.4327 0.0633 156.4); }
+.auth-links button { color: var(--blue); font-weight: 700; }
+
+/* Workspace shell. The grid, sidebar, search, and floating action stay in place. */
+.topbar { border-bottom: 1.5px solid var(--portal-outline); }
+.search-box {
+  border: 1.5px solid oklch(0.8651 0.0119 153.6);
+  border-radius: 10px;
+  background: oklch(0.9830 0.0034 145.5);
+}
+.search-box:focus-within { border-color: var(--portal-outline); box-shadow: 3px 3px 0 oklch(0.8835 0.0678 150.8); }
+.search-box input::placeholder { color: oklch(0.6061 0.0149 166.9); }
+.sidebar { border-right: 1.5px solid var(--portal-outline); background: oklch(1.0000 0.0000 89.9); }
+.nav-label {
+  color: oklch(0.4778 0.0224 157.3);
+  padding-bottom: 10px;
+  border-bottom: 1px dashed oklch(0.8241 0.0180 153.5);
+}
+.nav-item { color: oklch(0.3526 0.0168 159.1); font-weight: 600; }
+.nav-item:hover { background: oklch(0.9712 0.0125 149.3); }
+.nav-item.active {
+  border: 1.5px solid var(--portal-outline);
+  background: var(--portal-mint);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--portal-outline);
+}
+.sidebar-note {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 14px;
+  background: var(--portal-peach);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.sidebar-note p { color: oklch(0.4432 0.0150 156.6); }
+.content {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background);
+  background-image: radial-gradient(oklch(0.9230 0.0127 149.2) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.page-head h1 { font-weight: 850; letter-spacing: -.05em; }
+.page-head p:last-child { color: oklch(0.4745 0.0167 155.2); }
+.selection-toolbar { color: oklch(0.3591 0.0188 157.4); }
+.selection-toolbar input, .row-check input { accent-color: var(--blue); }
+.operation-status { border: 1px solid oklch(0.8424 0.0699 151.8); }
+.workspace-footer {
+  margin-top: auto;
+  padding-top: 72px;
+  color: oklch(0.5053 0.0184 154.1);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* File and link list adopts the portal's bordered, offset-shadow cards. */
+.file-table {
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.file-header {
+  background: var(--portal-mint);
+  color: oklch(0.3452 0.0231 154.8);
+  border-bottom: 1.5px solid var(--portal-outline);
+}
+.selection-header { width: calc(100% - 44px); }
+.file-row { border-bottom-color: oklch(0.9210 0.0110 149.9); }
+.file-name .file-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.45;
+}
+button.file-row:hover { background: oklch(0.9782 0.0108 149.9); }
+.selectable-row { border-bottom-color: oklch(0.9210 0.0110 149.9); }
+.row-selected { background: oklch(0.9654 0.0216 149.7); }
+.kind-icon {
+  border: 1px solid var(--portal-outline);
+  background: oklch(0.9544 0.0193 240.7);
+  color: oklch(0.4023 0.0606 237.2);
+}
+.kind-icon svg { align-self: start; margin-top: 6px; }
+.kind-icon small { bottom: 4px; line-height: 1; }
+.kind-icon.folder { background: var(--portal-lavender); color: oklch(0.4443 0.0906 293.0); }
+.kind-icon.link { background: var(--portal-mint); color: oklch(0.4488 0.0863 156.8); }
+.empty span { border: 1px solid var(--portal-outline); background: var(--portal-mint); color: var(--ink); }
+.fab {
+  border: 1.5px solid var(--portal-outline);
+  background: var(--portal-outline);
+  box-shadow: 5px 5px 0 oklch(0.8286 0.0886 152.3);
+}
+.fab:hover { background: oklch(0.4327 0.0633 156.4); }
+.bulk-actions, .upload-queue {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.upload-queue header { background: var(--portal-mint); border-bottom-color: var(--portal-outline); }
+.upload-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1.5px solid oklch(0.5879 0.0131 153.5);
+  border-radius: 9px;
+  background: oklch(1.0000 0.0000 89.9);
+  resize: vertical;
+}
+.upload-editor textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px oklch(0.7928 0.0999 156.4 / 0.400); }
+.upload-queue footer .queue-action {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 999px;
+  background: oklch(1.0000 0.0000 89.9);
+  color: var(--ink);
+  font-weight: 700;
+}
+.upload-queue footer .queue-action:hover { background: var(--portal-mint); }
+.upload-entry:hover, .member-results button:hover { background: oklch(0.9712 0.0125 149.3); }
+.queue-selection-head { background: var(--portal-mint); }
+.detail-body dl div { background: oklch(0.9700 0.0101 145.5); border: 1px solid oklch(0.9091 0.0254 149.1); }
+.detail-body > p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-body dl { margin: 0 0 12px; }
+.action-grid button:hover, .action-button:hover, .folder-choice:hover { background: oklch(0.9702 0.0142 148.8); }
+
+/* Radix dialogs and menus also render correctly on the server. */
+[data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"] { background: oklch(0.2404 0.0045 196.9 / 0.502); }
+[data-slot="dialog-content"], [data-slot="alert-dialog-content"] {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 5px 5px 0 var(--portal-outline);
+}
+[data-slot="dropdown-menu-content"] {
+  border: 1.5px solid var(--portal-outline);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+[data-slot="dropdown-menu-item"]:hover, [data-slot="dropdown-menu-item"]:focus { background: var(--portal-mint); }
+[data-slot="dialog-footer"] button[type="submit"],
+[data-slot="alert-dialog-footer"] button[data-slot="alert-dialog-action"] { background: var(--portal-outline); border-color: var(--portal-outline); }
+
+@media (max-width: 650px) {
+  .login-intro { border-right: 0; border-bottom: 1.5px solid var(--portal-outline); }
+  .sidebar { border-right: 1.5px solid var(--portal-outline); }
+  .file-table { box-shadow: 3px 3px 0 var(--portal-outline); }
+  .search-box { border-color: var(--portal-outline); }
+}
+
+/* Administrator workspace follows the existing sidebar and content position. */
+.admin-panel { width: 100%; min-width: 0; }
+.admin-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; }
+.admin-tabs button {
+  padding: 9px 16px;
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 999px;
+  background: oklch(1.0000 0.0000 89.9);
+  font-weight: 700;
+}
+.admin-tabs button.active { background: var(--portal-mint); box-shadow: 3px 3px 0 var(--portal-outline); }
+.admin-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 18px; }
+.admin-filters label { display: grid; gap: 6px; min-width: 150px; color: oklch(0.3743 0.0186 157.5); font-size: 13px; font-weight: 700; }
+.admin-filters label:first-child { flex: 1 1 240px; }
+.admin-filters input, .admin-filters select {
+  height: 40px; width: 100%; padding: 8px 10px;
+  border: 1.5px solid oklch(0.6530 0.0209 152.6); border-radius: 8px; background: oklch(1.0000 0.0000 89.9);
+}
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1.5px solid var(--portal-outline);
+  border-radius: 15px;
+  background: oklch(1.0000 0.0000 89.9);
+  box-shadow: 4px 4px 0 var(--portal-outline);
+}
+.admin-table { width: 100%; min-width: 780px; border-collapse: collapse; text-align: left; font-size: 13px; }
+.admin-table th { padding: 13px 12px; background: var(--portal-mint); white-space: nowrap; }
+.admin-table td { padding: 14px 12px; border-top: 1px solid oklch(0.9237 0.0120 145.5); vertical-align: top; }
+.admin-table small { display: block; margin-top: 4px; color: var(--muted-ink); overflow-wrap: anywhere; }
+.admin-table .admin-status { color: oklch(0.5214 0.1138 55.4); font-weight: 700; }
+.admin-link, .admin-back {
+  padding: 0; border: 0; background: transparent; color: var(--blue);
+  text-align: left; font-weight: 750; text-decoration: underline; text-underline-offset: 3px;
+}
+.admin-link { overflow-wrap: anywhere; }
+.admin-back { margin-bottom: 14px; }
+.admin-row-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 160px; }
+.admin-row-actions button {
+  padding: 6px 8px; border: 1px solid var(--portal-outline);
+  border-radius: 8px; background: oklch(1.0000 0.0000 89.9); font-size: 12px;
+}
+.admin-row-actions button:hover:not(:disabled) { background: var(--portal-mint); }
+.admin-row-actions button:disabled { opacity: .45; cursor: default; }
+.admin-empty, .admin-footnote { padding: 12px 16px; margin: 0; color: var(--muted-ink); font-size: 12px; }
+.admin-footnote { margin-top: 8px; padding: 4px 0; line-height: 1.6; }
+.admin-table-wrap > .admin-footnote { padding: 4px 16px 12px; }
+.admin-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 4px; }
+.admin-pagination button { border: 1px solid var(--line); background: white; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+.admin-pagination button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-message { padding: 12px; border: 1px solid oklch(0.8248 0.0651 149.0); border-radius: 8px; background: var(--portal-mint); }
+.admin-health-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 16px; margin-bottom: 28px; }
+.admin-health-grid article {
+  min-width: 0; padding: 18px; border: 1.5px solid var(--portal-outline);
+  border-radius: 14px; background: oklch(1.0000 0.0000 89.9); box-shadow: 3px 3px 0 var(--portal-outline);
+}
+.admin-health-grid h2 { font-size: 14px; margin: 0 0 12px; }
+.admin-health-grid strong { display: block; font-size: 18px; overflow-wrap: anywhere; }
+.admin-health-grid p { margin: 10px 0 0; color: var(--muted-ink); font-size: 12px; line-height: 1.55; }
+.admin-section-title { font-size: 18px; margin: 12px 0; }
+.admin-confirm-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 16px; background: oklch(0.2404 0.0045 196.9 / 0.502); }
+.admin-confirm { position: relative; width: min(460px,100%); margin: 0; padding: 24px; border: 1.5px solid var(--portal-outline); border-radius: 16px; background: oklch(1.0000 0.0000 89.9); color: var(--ink); box-shadow: 5px 5px 0 var(--portal-outline); }
+.admin-confirm h2 { margin: 0 0 12px; font-size: 21px; }
+.admin-confirm p { color: oklch(0.4229 0.0181 157.6); line-height: 1.6; overflow-wrap: anywhere; }
+.admin-confirm > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+@media (max-width: 650px) {
+  .admin-filters label, .admin-filters label:first-child { flex: 1 1 100%; }
+  .admin-table-wrap { box-shadow: 3px 3px 0 var(--portal-outline); }
+}
