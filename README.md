@@ -13,6 +13,7 @@ T-Files 供 TSchool 學生會成員整理檔案、連結與資料夾。只有 `@
 | `src/app/` | Next.js 頁面與 API |
 | `src/lib/` | 獨立登入、存取權、郵件與 PostgreSQL／檔案儲存 |
 | `src/config/file.ts` | 部署前必填的環境變數清單 |
+| `src/app/globals.css` | 使用 `tpass-ui` 色彩與共用表單元件的畫面樣式 |
 | `prisma/migrations/` | PostgreSQL 結構的版本遷移 |
 | `postgres/` | 原始 PostgreSQL 結構參考 |
 | `ops/` | 備份、Nginx 和系統服務設定 |
@@ -30,8 +31,8 @@ pnpm exec prisma migrate deploy
 pnpm dev
 ```
 
-提交前執行 `pnpm lint`、`pnpm typecheck`、`pnpm build`。`pnpm test:admin` 與 `pnpm test:security` 只可使用各自指定的拋棄式 PostgreSQL 資料庫，不可指向正式資料庫。
+提交前執行 `pnpm lint`、`pnpm typecheck`、`pnpm build`。`pnpm test:auth`、`pnpm test:admin` 與 `pnpm test:security` 只可使用各自指定的拋棄式 PostgreSQL 資料庫，不可指向正式資料庫。
 
-正式部署由 TSchool 的服務註冊表與維運部署工具管理。遷移既有主機時，先備份資料庫和私有檔案，確認 `.env.local`、資料庫遷移、PM2、Nginx 與備份服務，再切換程序；不要重設或清空既有資料。
+正式部署由 TSchool 的服務註冊表與維運部署工具管理。遷移既有主機時，先備份資料庫和私有檔案，確認 `.env.local`、資料庫遷移、PM2、Nginx 與備份服務，再切換程序；不要重設或清空既有資料。首次納管現有資料庫時須先執行 `ops/one-time-existing-owner.sql`，並以 `prisma migrate resolve --applied 20260922_baseline` 標記已存在的結構；不可對非空資料庫直接執行基準遷移。
 
 安全設計與漏洞回報見 [SECURITY.md](./SECURITY.md)。[初版 README](./docs/archive/初版README.md) 與 [舊版部署文件](./docs/archive/舊版部署與維護手冊.md) 保留作歷史參考，內容不適用於現行部署。
