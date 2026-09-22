@@ -30,8 +30,18 @@ async function post(action, body, cookie = '') {
   return { status: response.status, data: await response.json().catch(() => ({})), cookie: response.headers.get('set-cookie') };
 }
 function latestToken() {
-  const normalized = mail.at(-1)?.raw.replace(/=\r?\n/g, '').replace(/=3D/gi, '=') || '';
-  const token = /token=([A-Za-z0-9_-]{43})/.exec(normalized)?.[1];
+  const raw = mail.at(-1)?.raw || '';
+  const split = /\r?\n\r?\n/.exec(raw);
+  if (!split) throw Error('Test mail has no body');
+  const headers = raw.slice(0, split.index);
+  const encoded = raw.slice(split.index + split[0].length);
+  let body = encoded;
+  if (/Content-Transfer-Encoding:\s*base64/i.test(headers)) {
+    body = Buffer.from(encoded.replace(/\s/g, ''), 'base64').toString('utf8');
+  } else if (/Content-Transfer-Encoding:\s*quoted-printable/i.test(headers)) {
+    body = decodeURIComponent(encoded.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, '%$1'));
+  }
+  const token = /token=([A-Za-z0-9_-]{43})/.exec(body)?.[1];
   if (!token) throw Error('Verification token missing from test mail');
   return token;
 }
